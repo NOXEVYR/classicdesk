@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.6.0-preview</Version>
+    <AssemblyName>ClassicDesk</AssemblyName>
+    <StartupObject>ClassicDesk.ShellProgram</StartupObject>
+    <ApplicationIcon>Assets/ClassicDesk.ico</ApplicationIcon>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Deterministic>true</Deterministic>
+    <PathMap>$(MSBuildProjectDirectory)=/_/ClassicDesk</PathMap>
+    <SelfContained>false</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="AppIcons.cs;ShellPreview.cs;ShellProfile.cs;ShellSettingsWindow.cs;ShellBackendPlan.cs;ShellBackendConfig.cs;ShellProgram.cs;ShellActivation.cs;ShellActivationHost.cs;ShellNativeController.cs;ShellNativePanel.cs" />
+    <Resource Include="Assets/ClassicDesk.ico" />
+  </ItemGroup>
+</Project>

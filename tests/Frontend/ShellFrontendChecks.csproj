@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <EnableDefaultPageItems>false</EnableDefaultPageItems>
+    <AssemblyName>ClassicDesk</AssemblyName>
+    <StartupObject>ClassicDesk.FrontendChecks</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../src/ClassicDesk/AppIcons.cs" Link="AppIcons.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellPreview.cs" Link="ShellPreview.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellProfile.cs" Link="ShellProfile.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellSettingsWindow.cs" Link="ShellSettingsWindow.cs" />
+    <Page Include="../../src/ClassicDesk/ShellTheme.xaml" Link="ShellTheme.xaml" />
+  </ItemGroup>
+</Project>
+
