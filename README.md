@@ -2,7 +2,7 @@
 
 [← 返回 portfolio](https://github.com/turnsolesama/portfolio) · [Releases · v0.6.0-preview](https://github.com/turnsolesama/classicdesk/releases/tag/v0.6.0-preview)
 
-ClassicDesk 是一个 C# / WPF 编写的 Windows 桌面外观设置前端，提供任务栏、资源管理器、右键菜单三页方案编辑，以及对应参数的原创图示。
+ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管理器与右键菜单的外观和布局调整。当前公开预览版提供三页修改方案编辑与原创参数图示，采用 C# / WPF 实现。
 
 **这个下载包可用于预览和保存方案，没有捆绑 Windhawk 等第三方增强运行组件，因此当前公开包不能直接启用真实桌面改造。** 原生宿主与恢复代码已纳入源码，但尚未完成 Windows 实机效果验收。图片是示意图，不是系统效果截图。
 
