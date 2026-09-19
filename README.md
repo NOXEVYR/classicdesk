@@ -49,7 +49,7 @@ ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管�
 
 ## 下载
 
-[Windows x64 预览版 ZIP](https://github.com/turnsolesama/classicdesk/releases/download/v0.10.0-preview/ClassicDesk-0.10.0-preview-windows-x64.zip) · [SHA-256 校验](releases/0.10.0-preview/SHA256SUMS.txt)
+[Windows x64 预览版 ZIP](https://github.com/turnsolesama/classicdesk/releases/download/v0.10.0-preview/ClassicDesk-0.10.0-preview-windows-x64.zip) · [SHA-256 校验](https://github.com/turnsolesama/classicdesk/releases/download/v0.10.0-preview/SHA256SUMS.txt)
 
 ## 运行
 
