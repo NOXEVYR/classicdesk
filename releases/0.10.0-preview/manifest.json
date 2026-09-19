@@ -1,0 +1,16 @@
+{
+  "sourceCommit": "f3ff9b23391323a778b6cd966999b899e70d4e0a",
+  "version": "0.10.0-preview",
+  "packages": [
+    {
+      "file": "ClassicDesk-0.10.0-preview-windows-x64.zip",
+      "bytes": 6986094,
+      "sha256": "2ae6c4b318849ed58101cdd85588cbd5ca9dd51a2f195616c54567e743bbf9e5"
+    },
+    {
+      "file": "ClassicDesk-0.10.0-preview-source-public.zip",
+      "bytes": 8023555,
+      "sha256": "ed22c7d2d5328ec022cd02513f339b83042623b0663a1ba2e6b724cd84a14fd6"
+    }
+  ]
+}

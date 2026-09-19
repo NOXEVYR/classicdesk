@@ -1,0 +1,2 @@
+23996539df509c9d9e46b3eb1f50122027b13d67c5a4162ff7209c9768dbbc10  ClassicDesk-0.6.0-preview-windows-x64.zip
+c8ae24cee6b8d071c99272913b89cb8606da6b8a4a489afc952034e42b984bf8  ClassicDesk-0.6.0-preview-source-public.zip
