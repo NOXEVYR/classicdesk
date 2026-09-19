@@ -52,9 +52,14 @@ public sealed class ShellNativeController : IShellNativeController
     ShellNativeReview Review(ShellProfile profile)
     {
         profile.Validate();
+        var pending = PendingRecords();
+        if (!Directory.Exists(packageRoot) && pending.Length != 0)
+            return new("有未完成的恢复记录，增强组件缺失",
+                $"检测到 {pending.Length} 份未结束的切换记录，当前无法核对增强组件。\n" +
+                string.Join("\n", pending.Select(j => $"记录 {j.Id:N} · {j.State}")) +
+                "\n请先恢复原来使用的同版本运行组件，再重新检查。记录已保留；此时不会启用新方案、停止进程或覆盖桌面设置。");
         if (!Directory.Exists(packageRoot)) return new("公开预览版未包含增强运行组件", "此下载包只包含 ClassicDesk 前端。第三方增强组件的公开分发材料尚在整理，当前不能启用真实桌面改造；预览、方案保存和停用配置生成仍可使用。");
         var check = WindowsShellActivationHost.CheckPackage(packageRoot, ReviewedRuntimeManifest);
-        var pending = PendingRecords();
         if (pending.Length > 1) return new("有多份未结束的切换记录", "为避免覆盖已有设置，需要先核对本机恢复记录。本次不进行切换。");
         if (pending.Length == 1)
         {

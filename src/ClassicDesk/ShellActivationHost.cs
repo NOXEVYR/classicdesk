@@ -123,7 +123,8 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         SaveOwnership(package, record, false);
         try
         {
-            var after = Exchange(package, change.Target, change.Before, change.DesiredExists, change.DesiredData);
+            var after = Exchange(package, change.Target, change.Before, change.DesiredExists, change.DesiredData,
+                () => Guard(package, guards));
             SaveOwnership(package, record with { After = after, Phase = "confirmed" }, true);
             return new(ActivationOutcome.Confirmed, token, after);
         }
@@ -137,7 +138,8 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         SaveOwnership(package, record with { Phase = "restore-intent" }, true);
         try
         {
-            var after = Exchange(package, target, record.After!, original.Exists, original.Data);
+            var after = Exchange(package, target, record.After!, original.Exists, original.Data,
+                () => Guard(package, guards, AllowedProcess(package)));
             SaveOwnership(package, record with { Phase = "restored", Restored = after }, true);
             return new(ActivationOutcome.Confirmed, "restore-" + record.Token, after);
         }
@@ -217,8 +219,9 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         }
         return output;
     }
-    ActivationItemState Exchange(VerifiedActivationPackage package, ActivationTarget target, ActivationItemState before, bool exists, string data)
+    ActivationItemState Exchange(VerifiedActivationPackage package, ActivationTarget target, ActivationItemState before, bool exists, string data, Action verifyGuards)
     {
+        verifyGuards();
         if (target == ActivationTarget.TaskbarAlignment) return alignment.CompareExchange(before, exists, data);
         var path = SafePath(package.Root, Targets[target]); if (ReadState(path) != before) throw new IOException("文件提交前修订变化。");
         if (!exists) { if (File.Exists(path)) File.Delete(path); }
@@ -226,7 +229,18 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         {
             var bytes = Convert.FromBase64String(data); if (bytes.Length > 1024 * 1024) throw new InvalidDataException("配置过大。");
             var temporary = path + ".classicdesk-" + Guid.NewGuid().ToString("N") + ".tmp";
-            try { WriteNew(temporary, bytes); if (ReadState(path) != before) throw new IOException("替换前修订变化。"); if (before.Exists) File.Replace(temporary, path, null); else File.Move(temporary, path, false); }
+            try
+            {
+                WriteNew(temporary, bytes);
+                void VerifyCurrent()
+                {
+                    verifyGuards();
+                    if (ReadState(path) != before) throw new IOException("替换前修订变化。");
+                }
+                VerifyCurrent();
+                if (before.Exists) ActivationFileReplace.Commit(temporary, path, VerifyCurrent);
+                else File.Move(temporary, path, false);
+            }
             finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
         var after = ReadState(path); if (after.Exists != exists || after.Data != data) throw new IOException("配置回读不匹配。"); return after;
@@ -271,7 +285,13 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
     static void ReplaceOwnedFile(string path, byte[] bytes)
     {
         RejectReparse(path); var original = ReadState(path); var temp = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try { WriteNew(temp, bytes); if (ReadState(path) != original) throw new IOException("归属文件被外部修改。"); File.Replace(temp, path, null); if (!ReadBounded(path, 4 * 1024 * 1024).AsSpan().SequenceEqual(bytes)) throw new IOException("归属文件回读失败。"); }
+        try
+        {
+            WriteNew(temp, bytes);
+            ActivationFileReplace.Commit(temp, path, () =>
+            { if (ReadState(path) != original) throw new IOException("归属文件被外部修改。"); });
+            if (!ReadBounded(path, 4 * 1024 * 1024).AsSpan().SequenceEqual(bytes)) throw new IOException("归属文件回读失败。");
+        }
         finally { if (File.Exists(temp)) File.Delete(temp); }
     }
     static ActivationWriteResult Rejected(string error) => new(ActivationOutcome.RejectedWithoutChange, null, null, error);

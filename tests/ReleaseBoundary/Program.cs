@@ -14,7 +14,23 @@ var checks = new[]
     new { name = "Public preview clearly explains omitted components", passed = review.Title.Contains("公开预览版") && review.Detail.Contains("第三方增强组件") },
     new { name = "Missing components cannot produce enable or restore tickets", passed = !review.CanEnable && !review.CanRestore && review.EnableTicket is null && review.RestoreTicket is null }
 };
-var report = new { passed = checks.Count(c => c.passed), failed = checks.Count(c => !c.passed), realHostCalls = 0, windowsShown = 0, checks };
+var allChecks = checks.ToList();
+Directory.CreateDirectory(journals);
+var id = Guid.NewGuid(); var journalPath = Path.Combine(journals, id.ToString("N") + ".json");
+var original = JsonSerializer.SerializeToUtf8Bytes(new ActivationJournal { Id = id, State = ShellActivationState.Active });
+File.WriteAllBytes(journalPath, original);
+var pendingReview = await controller.ReviewAsync(new ShellProfile());
+allChecks.Add(new { name = "Missing components still surface unfinished recovery records", passed = pendingReview.Title.Contains("恢复记录") && pendingReview.Detail.Contains(id.ToString("N")) });
+allChecks.Add(new { name = "Recovery warning preserves record bytes and creates no runtime", passed = File.ReadAllBytes(journalPath).SequenceEqual(original) && !Directory.Exists(package) });
+allChecks.Add(new { name = "Missing runtime with pending recovery cannot issue operation tickets", passed = !pendingReview.CanEnable && !pendingReview.CanRestore && pendingReview.EnableTicket is null && pendingReview.RestoreTicket is null && forbidden.Calls == 0 });
+File.WriteAllText(journalPath, JsonSerializer.Serialize(new ActivationJournal { Id = id, State = ShellActivationState.Restored }));
+var completedReview = await controller.ReviewAsync(new ShellProfile());
+allChecks.Add(new { name = "Completed history does not appear as unfinished recovery", passed = completedReview.Title.Contains("公开预览版") && forbidden.Calls == 0 });
+File.WriteAllText(journalPath, "broken-json");
+bool rejected = false;
+try { await controller.ReviewAsync(new ShellProfile()); } catch (JsonException) { rejected = true; }
+allChecks.Add(new { name = "Damaged recovery record stays intact and blocks review", passed = rejected && File.ReadAllText(journalPath) == "broken-json" && forbidden.Calls == 0 });
+var report = new { passed = allChecks.Count(c => c.passed), failed = allChecks.Count(c => !c.passed), realHostCalls = forbidden.Calls, windowsShown = 0, checks = allChecks };
 var text = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
 if (args.Length == 1) { var path = Path.GetFullPath(args[0]); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, text); }
 Console.WriteLine(text); return report.failed == 0 ? 0 : 1;

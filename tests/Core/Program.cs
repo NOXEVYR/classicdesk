@@ -12,7 +12,7 @@ void Test(string name, Action<Fixture> action)
 {
     var fixture = new Fixture(Path.Combine(root, results.Count.ToString()));
     try { action(fixture); results.Add(new { name, passed = true }); }
-    catch (Exception e) { results.Add(new { name, passed = false, error = e.ToString() }); }
+    catch (Exception e) { results.Add(new { name, passed = false, error = e.ToString(), activation = fixture.LastActivation, storageErrors = fixture.Store.Errors }); }
 }
 Test("activate records all originals, intents and owned daemon; visual claim stays false", f =>
 {
@@ -115,6 +115,90 @@ Test("oversized journal rejected before deserialization", f => { var id = Guid.N
 
 Test("fresh restore confirmation accepts new Explorer session without rewriting original evidence", f => { var r=f.Activate(); f.Host.Running=false; f.Host.EnvironmentRevision="explorer-new-session"; AssertRestore(f,r); void AssertRestore(Fixture fixture,ActivationResult result) { Check(fixture.Core.Restore(fixture.Core.CaptureRestoreConfirmation(result.JournalId)).State==ShellActivationState.Restored); var j=fixture.Journal(); Check(j.Guards.EnvironmentRevision=="explorer-build-and-session-1"&&j.RestoreGuards?.EnvironmentRevision=="explorer-new-session"); } });
 Test("another Explorer change after restore confirmation blocks stop and overwrite", f => { var r=f.Activate(); f.Host.EnvironmentRevision="explorer-new-session"; var c=f.Core.CaptureRestoreConfirmation(r.JournalId); f.Host.EnvironmentRevision="explorer-newer-session"; Check(f.Core.Restore(c).State==ShellActivationState.ManualReview&&f.Host.Stops==0&&f.Host.Restores==0); });
+Test("late external edit to an already restored target cannot claim restored", f =>
+{
+    var active = f.Activate();
+    f.Host.AfterRestore = target => { if (target == ActivationTarget.TaskbarAlignment) f.Host.External(ActivationTarget.EngineSettings); };
+    var result = f.Core.Restore(f.Core.CaptureRestoreConfirmation(active.JournalId));
+    Check(result.State == ShellActivationState.ManualReview && f.Host.Restores == 7 && f.Host.Stops == 1);
+    Check(f.Host.States[ActivationTarget.EngineSettings].Revision.StartsWith("external"));
+});
+Test("late external edit to an unchanged target cannot claim restored", f =>
+{
+    f.Host.States[ActivationTarget.EngineSettings] = new(true, FakeHost.Desired(ActivationTarget.EngineSettings), "already-desired");
+    var active = f.Activate();
+    f.Host.AfterRestore = target => { if (target == ActivationTarget.TaskbarAlignment) f.Host.External(ActivationTarget.EngineSettings); };
+    var result = f.Core.Restore(f.Core.CaptureRestoreConfirmation(active.JournalId));
+    Check(result.State == ShellActivationState.ManualReview && f.Host.Restores == 6 && f.Host.Stops == 1);
+});
+foreach (int code in new[] { 32, 33, 1175 })
+    Test("unchanged replacement retries transient Windows error " + code, f =>
+    {
+        var (staged, target) = ReplacementFiles(f); int attempts = 0, checks = 0;
+        ActivationFileReplace.Commit(staged, target, () => { checks++; Check(File.ReadAllText(target) == "original"); },
+            () => { if (++attempts <= 2) throw NativeError(code); File.Move(staged, target, true); }, _ => { });
+        Check(attempts == 3 && checks == 3 && File.ReadAllText(target) == "replacement");
+    });
+foreach (int code in new[] { 5, 1176, 1177 })
+    Test("uncertain or permanent replacement error is not retried " + code, f =>
+    {
+        var (staged, target) = ReplacementFiles(f); int attempts = 0;
+        Reject(() => ActivationFileReplace.Commit(staged, target, () => { },
+            () => { attempts++; throw NativeError(code); }, _ => throw new Exception("must not wait")));
+        Check(attempts == 1 && File.ReadAllText(target) == "original");
+    });
+Test("replacement retries are bounded", f =>
+{
+    var (staged, target) = ReplacementFiles(f); int attempts = 0, waits = 0;
+    Reject(() => ActivationFileReplace.Commit(staged, target, () => { },
+        () => { attempts++; throw NativeError(1175); }, _ => waits++));
+    Check(attempts == 6 && waits == 5 && File.ReadAllText(target) == "original");
+});
+Test("external destination edit while waiting is preserved", f =>
+{
+    var (staged, target) = ReplacementFiles(f); int attempts = 0;
+    Reject(() => ActivationFileReplace.Commit(staged, target,
+        () => { if (File.ReadAllText(target) != "original") throw new IOException("revision conflict"); },
+        () => { attempts++; throw NativeError(1175); }, _ => File.WriteAllText(target, "external")));
+    Check(attempts == 1 && File.ReadAllText(target) == "external");
+});
+Test("staged replacement edit while waiting is rejected", f =>
+{
+    var (staged, target) = ReplacementFiles(f); int attempts = 0;
+    Reject(() => ActivationFileReplace.Commit(staged, target, () => { },
+        () => { attempts++; throw NativeError(1175); }, _ => File.WriteAllText(staged, "tampered")));
+    Check(attempts == 1 && File.ReadAllText(target) == "original");
+});
+Test("Windows inherited staging timestamps do not invalidate identical bytes", f =>
+{
+    var (staged, target) = ReplacementFiles(f); int attempts = 0;
+    ActivationFileReplace.Commit(staged, target, () => Check(File.ReadAllText(target) == "original"),
+        () => { if (++attempts == 1) { File.SetCreationTimeUtc(staged, DateTime.UtcNow.AddDays(-1)); File.SetLastWriteTimeUtc(staged, DateTime.UtcNow.AddDays(-1)); throw NativeError(1175); } File.Move(staged, target, true); }, _ => { });
+    Check(attempts == 2 && File.ReadAllText(target) == "replacement");
+});
+Test("changed environment gate aborts replacement retry", f =>
+{
+    var (staged, target) = ReplacementFiles(f); int attempts = 0; bool safe = true;
+    Reject(() => ActivationFileReplace.Commit(staged, target,
+        () => { if (!safe) throw new InvalidOperationException("environment changed"); },
+        () => { attempts++; throw NativeError(1175); }, _ => safe = false));
+    Check(attempts == 1 && File.ReadAllText(target) == "original");
+});
+Test("real Windows reader lock can release before replacement retry", f =>
+{
+    var (staged, target) = ReplacementFiles(f); int waits = 0;
+    using var reader = new FileStream(target, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+    ActivationFileReplace.Commit(staged, target, () => Check(File.ReadAllText(target) == "original"),
+        wait: milliseconds => { waits++; reader.Dispose(); Thread.Sleep(milliseconds); });
+    Check(waits > 0 && File.ReadAllText(target) == "replacement");
+});
+static IOException NativeError(int code) => new("simulated Windows replacement failure", unchecked((int)0x80070000) | code);
+static (string Staged, string Target) ReplacementFiles(Fixture f)
+{
+    var root = Path.GetDirectoryName(f.LogDirectory)!;
+    var staged = Path.Combine(root, "replacement.tmp"); var target = Path.Combine(root, "current.json");
+    File.WriteAllText(staged, "replacement"); File.WriteAllText(target, "original"); return (staged, target);
+}
 var failed = results.Count(x => !(bool)x.GetType().GetProperty("passed")!.GetValue(x)!);
 var source = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/ClassicDesk/ShellActivation.cs"));
 var report = new { passed = results.Count - failed, failed, mode = "fake-host and isolated journal files only", realHostWrites = 0, realProcessStarts = 0, realProcessStops = 0, realDesktopInteractions = 0, sourceSha256 = File.Exists(source) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))) : null, checks = results };
@@ -131,6 +215,7 @@ sealed class Fixture
     public FakeHost Host;
     public FaultStore Store;
     public ShellActivationCoordinator Core;
+    public ActivationResult? LastActivation;
     public Fixture(string root)
     {
         Directory.CreateDirectory(root); LogDirectory = Path.Combine(root, "journals");
@@ -138,7 +223,7 @@ sealed class Fixture
         Host = new FakeHost(LogDirectory); Store = new(new FileActivationJournalStore(LogDirectory)); Core = new(Host, Store);
     }
     public ActivationConfirmation Capture() => Core.CaptureConfirmation(Package, Profile);
-    public ActivationResult Activate() => Core.Activate(Capture());
+    public ActivationResult Activate() => LastActivation = Core.Activate(Capture());
     public string JournalPath() => Directory.GetFiles(LogDirectory, "*.json").Single();
     public ActivationJournal Journal() => JsonSerializer.Deserialize<ActivationJournal>(File.ReadAllText(JournalPath()))!;
 }
@@ -146,9 +231,14 @@ sealed class FaultStore(FileActivationJournalStore inner) : IActivationJournalSt
 {
     public FileActivationJournalStore Inner = inner;
     public Func<ActivationJournal, bool>? Fail;
+    public List<string> Errors = [];
     public IDisposable Acquire(Guid id) => Inner.Acquire(id);
     public ActivationJournalSnapshot Load(Guid id) => Inner.Load(id);
-    public void Save(ActivationJournal journal) { if (Fail?.Invoke(journal) == true) throw new IOException("injected persistence failure"); Inner.Save(journal); }
+    public void Save(ActivationJournal journal)
+    {
+        try { if (Fail?.Invoke(journal) == true) throw new IOException("injected persistence failure"); Inner.Save(journal); }
+        catch (Exception e) { Errors.Add($"0x{e.HResult:X8}: {e}"); throw; }
+    }
 }
 sealed class FakeHost : IActivationHost
 {
@@ -163,7 +253,7 @@ sealed class FakeHost : IActivationHost
     public string WriteBehavior = "normal", StartBehavior = "normal", StopBehavior = "normal", RestoreBehavior = "normal";
     public ActivationDaemonHealth? ForcedHealth;
     public ActivationDaemonIdentity? Identity;
-    public Action<ActivationTarget>? AfterWrite; public Action? AfterStop;
+    public Action<ActivationTarget>? AfterWrite, AfterRestore; public Action? AfterStop;
     public List<ActivationTarget> RestoreOrder = [];
     public FakeHost(string logDirectory)
     {
@@ -210,6 +300,7 @@ sealed class FakeHost : IActivationHost
         if (owners.GetValueOrDefault(target) != ownedWrite.OwnershipToken || States[target] != ownedWrite.After) return new(ActivationOutcome.RejectedWithoutChange, null, null);
         var after = States[target] = new(original.Exists, original.Data, "restored-" + ++revision);
         if (FailRestoreTarget == target && RestoreBehavior == "unknown") return new(ActivationOutcome.Unknown, null, null);
+        AfterRestore?.Invoke(target);
         return new(ActivationOutcome.Confirmed, "owned-restore-" + revision, after);
     }
     public ActivationStartResult StartDaemon(VerifiedActivationPackage package, ActivationGuards guards, IReadOnlyDictionary<ActivationTarget, ActivationItemState> expectedFinal)

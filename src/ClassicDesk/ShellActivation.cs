@@ -142,7 +142,8 @@ public sealed class FileActivationJournalStore : IActivationJournalStore
             using (var file = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             { file.Write(bytes); file.Flush(true); }
             CheckRevision();
-            if (expected is null) File.Move(temporary, path); else File.Replace(temporary, path, null);
+            if (expected is null) File.Move(temporary, path);
+            else ActivationFileReplace.Commit(temporary, path, () => { RejectReparseChain(); CheckRevision(); });
             if (!File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes)) throw new IOException("日志回读失败。");
             revisions[journal.Id] = Hash(bytes);
         }
@@ -155,6 +156,47 @@ public sealed class FileActivationJournalStore : IActivationJournalStore
                 throw new IOException("日志目录不能经过重解析点。");
     }
     static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+}
+
+/// <summary>
+/// Retry only Windows errors that leave both replacement names intact. Every
+/// attempt rechecks the caller's original revision and the staged bytes. Never
+/// retry a transaction, an uncertain rename, or a process/registry operation.
+/// </summary>
+internal static class ActivationFileReplace
+{
+    internal static void Commit(string temporary, string destination, Action verifyCurrent,
+        Action? replace = null, Action<int>? wait = null)
+    {
+        var staged = Stamp(temporary);
+        replace ??= () => File.Replace(temporary, destination, null);
+        wait ??= Thread.Sleep;
+        for (int attempt = 0; ; attempt++)
+        {
+            verifyCurrent();
+            if (Stamp(temporary) != staged) throw new IOException("待提交文件已变化，停止替换。");
+            try { replace(); return; }
+            catch (IOException e) when (attempt < 5 && e.HResult is
+                unchecked((int)0x80070020) or unchecked((int)0x80070021) or unchecked((int)0x80070497))
+            {
+                // Sharing/lock violation or ERROR_UNABLE_TO_REMOVE_REPLACED.
+                // 1176/1177 can have partial rename effects and are never retried.
+                wait(20 << attempt);
+            }
+        }
+    }
+    static string Stamp(string path)
+    {
+        for (string? current = Path.GetFullPath(path); current is not null; current = Path.GetDirectoryName(current))
+            if ((File.Exists(current) || Directory.Exists(current)) && (File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("待提交文件不能经过重解析点。");
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > 16 * 1024 * 1024) throw new InvalidDataException("待提交文件过大。");
+        // ReplaceFile can transfer destination metadata to the staged file even
+        // on failure. Validate its content, not inherited timestamps. The caller
+        // still verifies the destination's complete original revision each time.
+        return Convert.ToHexString(SHA256.HashData(stream));
+    }
 }
 
 public sealed class ShellActivationCoordinator(IActivationHost host, IActivationJournalStore store)
@@ -322,6 +364,21 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
                 catch (JournalFailure) { throw; }
                 catch (Exception e) { step.Error = e.Message; uncertain = true; Persist(journal); }
             }
+            // Later writes can race an external edit to an earlier restored
+            // target. Recheck the complete final state before claiming success.
+            try
+            {
+                EnsureGuards(journal, restoring ? journal.Daemon : null, restoring ? journal.RestoreGuards : journal.Guards);
+                foreach (var step in journal.Steps)
+                {
+                    var expected = step.RestorePhase == "confirmed" ? step.RestoreReceipt!.After : step.Change.Before;
+                    if (host.Read(journal.Package, step.Change.Target) != expected)
+                    { uncertain = true; step.Error ??= "恢复结束时发现目标修订变化，保留当前数据。"; }
+                }
+                if (restoring && host.InspectDaemon(journal.Daemon!) != ActivationDaemonHealth.OwnedProcessExited)
+                { uncertain = true; journal.Error ??= "恢复结束时未能确认原增强进程已退出。"; }
+            }
+            catch (Exception e) { uncertain = true; journal.Error ??= e.Message; }
             journal.State = uncertain ? ShellActivationState.ManualReview : restoring ? ShellActivationState.Restored : ShellActivationState.RolledBack;
             Persist(journal); return Result(journal);
         }
@@ -341,7 +398,7 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
     ActivationResult TryManual(ActivationJournal journal)
     { try { return Manual(journal); } catch (JournalFailure e) { return PersistenceStopped(journal, e); } }
     static ActivationResult PersistenceStopped(ActivationJournal journal, Exception error) =>
-        new(journal.Id, ShellActivationState.ManualReview, "日志持久化失败，已停止后续宿主操作；磁盘可能仅保留意图，必须人工检查。" + error.Message);
+        new(journal.Id, ShellActivationState.ManualReview, "日志持久化失败，已停止后续宿主操作；磁盘可能仅保留意图，必须人工检查。" + error.GetBaseException().Message);
     static ActivationResult Result(ActivationJournal journal) => new(journal.Id, journal.State, journal.Error);
     static bool SameValue(ActivationItemState state, bool exists, string data) => state.Exists == exists && state.Data == data;
     static bool ValidReceipt(ActivationWriteResult receipt, bool exists, string data) => receipt.Outcome == ActivationOutcome.Confirmed
