@@ -185,6 +185,79 @@ internal static class FrontendChecks
             Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-inspect"));
             Require(calls == 1 && owner == window && received == window.Draft && !window.IsVisible, "检查委托未准确接收当前方案和 owner。");
         });
+        Check("本地方案库按需读取，空库不创建目录或文件", () =>
+        {
+            var path = Path.Combine(run, "lazy-library", "profile.json"); var window = New(path); window.SelectPage(4);
+            Require(window.LibraryEntries.Count == 0 && !Directory.Exists(Path.GetDirectoryName(path)), "查看空库发生了写入。");
+        });
+        Check("方案库新增按钮保存完整草稿，但不保存当前方案", () =>
+        {
+            var path = Path.Combine(run, "library-events.json"); var window = New(path); window.ApplySkin(3); window.SelectPage(4);
+            var draft = window.Draft; Logical<TextBox>(window).Single(t => AutomationProperties.GetAutomationId(t) == "library-name").Text = "Win10 · 樱月办公";
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "library-add"));
+            Require(window.LibraryEntries.Single().Name == "Win10 · 樱月办公" && window.LibraryEntries.Single().Profile == draft && window.Draft == draft && !File.Exists(path), "方案库新增丢参数、改草稿或提前保存当前方案。");
+            Require(Logical<ComboBox>(window).Single(c => AutomationProperties.GetAutomationId(c) == "library-picker").SelectedItem?.ToString() == "Win10 · 樱月办公", "方案下拉框显示了内部记录而非名称。");
+            var reopened = New(path); reopened.SelectPage(4); Require(reopened.LibraryEntries.Single().Profile == draft, "重开窗口没有读回方案库。");
+            Capture(window, 1080, 820, "方案库-1080x820.png"); Capture(window, 740, 550, "方案库-740x550.png"); Bounds(window, 740, 550);
+        });
+        Check("载入方案库后可撤销回到原有未保存草稿", () =>
+        {
+            var path = Path.Combine(run, "library-undo.json"); var window = New(path); window.SaveToLibrary("Win10 方案"); var id = window.LibraryEntries.Single().Id;
+            window.ApplyPreset(1); window.ApplySkin(5); var draft = window.Draft;
+            window.LoadFromLibrary(id); Require(window.Draft == new ShellProfile(), "未载入所选方案。");
+            window.UndoLibraryLoad(); Require(window.Draft == draft && !File.Exists(path), "撤销载入丢失原未保存草稿。");
+            window.LoadFromLibrary(id); window.ApplySkin(2); var edited = window.Draft;
+            bool rejected = false; try { window.UndoLibraryLoad(); } catch (InvalidOperationException) { rejected = true; }
+            Require(rejected && window.Draft == edited, "后续编辑被撤销载入误覆盖。");
+        });
+        Check("复制、重命名和归档恢复保持方案身份及参数", () =>
+        {
+            var window = New(Path.Combine(run, "library-lifecycle.json")); window.ApplyPreset(2); window.ApplySkin(4); window.SaveToLibrary("紧凑办公 · 云海");
+            var original = window.LibraryEntries.Single(); window.DuplicateLibraryEntry(original.Id);
+            var copy = window.LibraryEntries.Single(e => e.Id != original.Id); Require(copy.Profile == original.Profile && copy.Name != original.Name, "复制身份或参数错误。");
+            window.RenameLibraryEntry(copy.Id, "Win11 · 日间"); window.ArchiveLibraryEntry(original.Id, true);
+            Require(window.LibraryEntries.Count == 2 && window.LibraryEntries.Single(e => e.Id == original.Id).Archived && window.LibraryEntries.Single(e => e.Id == copy.Id).Name == "Win11 · 日间", "归档误删条目或重命名改变身份。");
+            window.ArchiveLibraryEntry(original.Id, false); Require(window.LibraryEntries.Single(e => e.Id == original.Id).Profile == original.Profile, "恢复丢失参数。");
+        });
+        Check("更新方案库只修改选中条目，不改变当前保存文件", () =>
+        {
+            var path = Path.Combine(run, "library-update.json"); var window = New(path); window.SaveDraft(); var savedBytes = File.ReadAllBytes(path);
+            window.SaveToLibrary("Win10 方案"); var first = window.LibraryEntries.Single(); window.DuplicateLibraryEntry(first.Id); var copy = window.LibraryEntries.Single(e => e.Id != first.Id);
+            window.ApplyPreset(3); window.ApplySkin(2); window.UpdateLibraryEntry(first.Id);
+            Require(window.LibraryEntries.Single(e => e.Id == first.Id).Profile == window.Draft && window.LibraryEntries.Single(e => e.Id == copy.Id) == copy && File.ReadAllBytes(path).SequenceEqual(savedBytes), "更新覆盖其他条目或当前保存文件。");
+        });
+        Check("方案库拒绝重名和空名称，不改文件与草稿", () =>
+        {
+            var path = Path.Combine(run, "library-names.json"); var window = New(path); window.SaveToLibrary("Win10 方案"); var bytes = File.ReadAllBytes(path + ".library.json"); var draft = window.Draft;
+            foreach (var name in new[] { " win10 方案 ", "   ", "含\n换行", new string('字', 41) })
+            { bool rejected = false; try { window.SaveToLibrary(name); } catch (InvalidDataException) { rejected = true; } Require(rejected, "无效名称被接受。"); }
+            Require(File.ReadAllBytes(path + ".library.json").SequenceEqual(bytes) && window.Draft == draft, "拒绝时改变已有文件或草稿。");
+        });
+        Check("导出草稿不能覆盖本地方案库", () =>
+        {
+            var path = Path.Combine(run, "library-export-guard.json"); var window = New(path); window.SaveToLibrary("Win10 方案");
+            var libraryPath = path + ".library.json"; var bytes = File.ReadAllBytes(libraryPath); bool rejected = false;
+            try { window.ExportDraft(libraryPath, ShellProfileFile.Revision(libraryPath)); } catch (IOException) { rejected = true; }
+            Require(rejected && File.ReadAllBytes(libraryPath).SequenceEqual(bytes), "导出覆盖了方案库。");
+        });
+        Check("方案库外部修订冲突保留两个窗口的数据", () =>
+        {
+            var path = Path.Combine(run, "library-conflict.json"); var one = New(path); one.SaveToLibrary("Win10 方案"); var two = New(path); two.SelectPage(4);
+            one.SaveToLibrary("Win11 方案"); var bytes = File.ReadAllBytes(path + ".library.json"); var draft = two.Draft;
+            bool rejected = false; try { two.SaveToLibrary("过期写入"); } catch (IOException) { rejected = true; }
+            Require(rejected && two.Draft == draft && File.ReadAllBytes(path + ".library.json").SequenceEqual(bytes), "过期快照覆盖最新方案库。");
+        });
+        Check("损坏或未来版本方案库不可覆盖，但当前方案仍可编辑", () =>
+        {
+            var path = Path.Combine(run, "library-broken.json"); var window = New(path);
+            foreach (var content in new[] { "broken-json", "{\"SchemaVersion\":9,\"Entries\":[]}" })
+            {
+                File.WriteAllText(path + ".library.json", content); window.SelectPage(4); bool rejected = false;
+                try { window.SaveToLibrary("Win10 方案"); } catch (Exception e) when (e is JsonException or InvalidDataException) { rejected = true; }
+                Require(rejected && File.ReadAllText(path + ".library.json") == content, "覆盖了损坏或未来版本数据。");
+                window.ApplySkin(3); Require(window.Draft.Skin == "sakura", "方案库错误阻塞了普通编辑。");
+            }
+        });
         Check("任务栏试用面板只传递任务栏设置，并保留完整方案", () =>
         {
             var proposal = new ShellProfile(ClassicRibbon: true, ClassicContextMenu: true, Skin: "starlight");

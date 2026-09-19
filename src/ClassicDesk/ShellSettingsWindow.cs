@@ -38,6 +38,11 @@ public sealed class ShellSettingsWindow : Window
     readonly Dictionary<string, FrameworkElement> dependentControls = new();
     readonly Button save, undo, inspectButton;
     readonly string profilePath;
+    readonly ShellProfileLibrary library;
+    ShellLibrarySnapshot? librarySnapshot;
+    Guid? librarySelection;
+    bool showArchived;
+    (ShellProfile Before, ShellProfile Loaded)? libraryLoadUndo;
     readonly Func<ShellProfile, Task<string>> inspect;
     readonly Action<Window, ShellProfile>? manageNative;
     readonly ScrollViewer scroll;
@@ -52,6 +57,7 @@ public sealed class ShellSettingsWindow : Window
     public ShellSettingsWindow(ShellProfile? initial = null, string? path = null, Func<ShellProfile, Task<string>>? inspectPlan = null, Action<Window, ShellProfile>? manageNative = null)
     {
         profilePath = path ?? ShellProfileFile.DefaultPath; this.manageNative = manageNative;
+        library = new ShellProfileLibrary(profilePath + ".library.json");
         string? loadError = null;
         try { var snapshot = ShellProfileFile.Load(profilePath); saved = initial ?? snapshot.Profile; saved.Validate(); sourceRevision = snapshot.Revision; }
         catch (Exception e) { saved = new(); loadError = "原方案读取失败，暂用演示方案：" + e.Message; }
@@ -129,7 +135,7 @@ public sealed class ShellSettingsWindow : Window
     FrameworkElement BuildCaption()
     {
         var header = new Grid(); header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(23, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; brand.Children.Add(AppIcons.View("brand", 23)); var name = Label("ClassicDesk", 14, true); name.VerticalAlignment = VerticalAlignment.Center; name.Margin = new Thickness(8, 0, 0, 0); brand.Children.Add(name); var version = Label("0.10", 10); version.Foreground = Brush("#A4ACB8"); version.VerticalAlignment = VerticalAlignment.Center; version.Margin = new Thickness(8, 1, 0, 0); brand.Children.Add(version); name.Foreground = Brush("#303A53"); version.Foreground = Brush("#7E8BA3"); header.Children.Add(new Border { Width = 186, HorizontalAlignment = HorizontalAlignment.Left, Background = Brush("#F1F3FB"), Child = brand });
+        var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(23, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; brand.Children.Add(AppIcons.View("brand", 23)); var name = Label("ClassicDesk", 14, true); name.VerticalAlignment = VerticalAlignment.Center; name.Margin = new Thickness(8, 0, 0, 0); brand.Children.Add(name); var version = Label(typeof(ShellSettingsWindow).Assembly.GetName().Version?.ToString(2) ?? "", 10); version.Foreground = Brush("#A4ACB8"); version.VerticalAlignment = VerticalAlignment.Center; version.Margin = new Thickness(8, 1, 0, 0); brand.Children.Add(version); name.Foreground = Brush("#303A53"); version.Foreground = Brush("#7E8BA3"); header.Children.Add(new Border { Width = 186, HorizontalAlignment = HorizontalAlignment.Left, Background = Brush("#F1F3FB"), Child = brand });
         var system = new StackPanel { Orientation = Orientation.Horizontal }; Grid.SetColumn(system, 1); header.Children.Add(system);
         system.Children.Add(CaptionButton("最小化", "M 0,5 L 10,5", () => SystemCommands.MinimizeWindow(this)));
         var maximize = CaptionButton("最大化", "M 0,0 L 9,0 L 9,9 L 0,9 Z", () => { if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this); else SystemCommands.MaximizeWindow(this); }); system.Children.Add(maximize);
@@ -261,6 +267,7 @@ public sealed class ShellSettingsWindow : Window
     void BuildLibrary()
     {
         heading.Text = "方案与备份"; description.Text = "保存、迁移和找回设置，让每一次调整都有来处。";
+        BuildSavedLibrary();
         Section("当前方案", Draft == saved ? "草稿与本次打开或最近保存的方案一致。" : "以下修改尚未保存，其他页面的编辑也会一并保留。");
         var summary = Group();
         AddRow(summary, "布局与皮肤", "", Label(ShellPresets.DisplayName(Draft) + "\n" + ShellSkins.All[ShellSkins.Index(Draft)].Name, 11));
@@ -276,6 +283,77 @@ public sealed class ShellSettingsWindow : Window
         restore.IsEnabled = File.Exists(profilePath + ".previous"); AutomationProperties.SetAutomationId(restore, "shell-restore-previous"); AddRow(files, "上一份保存", "载入上次保存的备份，确认后再保存。", restore, true);
         AddNote("本页只管理 ClassicDesk 的方案文件。系统效果请通过右下角的应用检查确认。", "shell-library-note");
     }
+    void BuildSavedLibrary()
+    {
+        Section("本地方案库", "保存多套布局与皮肤组合。载入只进入草稿，归档后仍可恢复。");
+        var group = Group(); var panel = new StackPanel { Margin = new Thickness(16, 12, 16, 8) }; group.Children.Add(panel);
+        var toolbar = new WrapPanel(); panel.Children.Add(toolbar);
+        var archiveFilter = new CheckBox { Content = "查看归档", IsChecked = showArchived, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 8) };
+        AutomationProperties.SetAutomationId(archiveFilter, "library-archived"); toolbar.Children.Add(archiveFilter);
+        archiveFilter.Click += (_, _) => { showArchived = archiveFilter.IsChecked == true; librarySelection = null; SelectPage(4); };
+        var refresh = ActionButton("刷新", () => SelectPage(4)); refresh.Margin = new Thickness(0, 0, 0, 8); AutomationProperties.SetAutomationId(refresh, "library-refresh"); toolbar.Children.Add(refresh);
+        try { librarySnapshot = library.Read(); }
+        catch (Exception e) { librarySnapshot = null; panel.Children.Add(Label("方案库读取失败，原文件已保留：" + e.Message, 11)); return; }
+        var entries = librarySnapshot.Entries.Where(e => e.Archived == showArchived).OrderByDescending(e => e.UpdatedUtc).ToArray();
+        if (!entries.Any(e => e.Id == librarySelection)) librarySelection = entries.FirstOrDefault()?.Id;
+        var selected = entries.FirstOrDefault(e => e.Id == librarySelection);
+        var picker = new ComboBox { ItemsSource = entries.Select(e => e.Name).ToArray(), SelectedIndex = Array.FindIndex(entries, e => e.Id == librarySelection), HorizontalAlignment = HorizontalAlignment.Stretch, Style = (Style)FindResource("ShellChoice"), Margin = new Thickness(0, 0, 0, 10), IsEnabled = entries.Length > 0 };
+        AutomationProperties.SetAutomationId(picker, "library-picker"); AutomationProperties.SetName(picker, "已保存方案"); panel.Children.Add(picker);
+        picker.SelectionChanged += (_, _) => { if (picker.SelectedIndex >= 0) { librarySelection = entries[picker.SelectedIndex].Id; SelectPage(4); } };
+        panel.Children.Add(Label(selected is null ? (showArchived ? "暂无归档方案。" : "还没有保存到方案库，可将当前草稿新增为一套方案。") :
+            $"{ShellPresets.DisplayName(selected.Profile)} · {ShellSkins.All[ShellSkins.Index(selected.Profile)].Name}\n{selected.Profile.IconSize} px 图标 / {selected.Profile.TaskbarHeight} px 高度 · {selected.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}", 11));
+        var nameLabel = Label("方案名称", 11); nameLabel.Margin = new Thickness(0, 12, 0, 5); panel.Children.Add(nameLabel);
+        var name = new TextBox { Text = selected?.Name ?? ShellPresets.DisplayName(Draft) + " · " + ShellSkins.All[ShellSkins.Index(Draft)].Name, MaxLength = 40, Padding = new Thickness(10, 7, 10, 7), BorderBrush = Brush("#DCE2EC"), BorderThickness = new Thickness(1), Background = Brushes.White, Foreground = Brush("#29313D"), Margin = new Thickness(0, 0, 0, 12) };
+        AutomationProperties.SetAutomationId(name, "library-name"); AutomationProperties.SetName(name, "方案名称"); panel.Children.Add(name);
+        var actions = new WrapPanel(); panel.Children.Add(actions);
+        void Action(string title, string id, System.Action action, bool enabled = true)
+        {
+            var button = ActionButton(title, () => { try { action(); } catch (Exception e) { feedback.Text = "方案库操作未完成：" + e.Message; } });
+            button.IsEnabled = enabled; button.Margin = new Thickness(0, 0, 8, 8); AutomationProperties.SetAutomationId(button, id); actions.Children.Add(button);
+        }
+        Action("新增当前草稿", "library-add", () => SaveToLibrary(name.Text));
+        Action("载入预览", "library-load", () => LoadFromLibrary(selected!.Id), selected is not null && !showArchived);
+        Action("更新为当前草稿", "library-update", () => UpdateLibraryEntry(selected!.Id), selected is not null && !showArchived);
+        Action("复制", "library-copy", () => DuplicateLibraryEntry(selected!.Id), selected is not null);
+        Action("重命名", "library-rename", () => RenameLibraryEntry(selected!.Id, name.Text), selected is not null);
+        Action(showArchived ? "恢复方案" : "归档", "library-archive", () => ArchiveLibraryEntry(selected!.Id, !showArchived), selected is not null);
+        Action("撤销载入", "library-undo-load", UndoLibraryLoad, libraryLoadUndo is { } prior && Draft == prior.Loaded);
+    }
+    public IReadOnlyList<ShellLibraryEntry> LibraryEntries => (librarySnapshot ??= library.Read()).Entries;
+    public void SaveToLibrary(string name)
+    {
+        librarySnapshot = library.Add(librarySnapshot ?? library.Read(), name, Draft);
+        librarySelection = librarySnapshot.Entries.Last().Id; showArchived = false; SelectPage(4);
+        feedback.Text = "已新增到方案库 · 当前草稿与 Windows 状态不变";
+    }
+    public void LoadFromLibrary(Guid id)
+    {
+        var entry = ShellProfileLibrary.Find(librarySnapshot ??= library.Read(), id);
+        if (entry.Archived) throw new InvalidOperationException("请先恢复已归档方案。");
+        libraryLoadUndo = (Draft, entry.Profile); librarySelection = id; Change(entry.Profile); SelectPage(4);
+        feedback.Text = "已载入预览 · 可撤销载入；确认后再保存当前方案";
+    }
+    public void UndoLibraryLoad()
+    {
+        if (libraryLoadUndo is not { } prior || Draft != prior.Loaded) throw new InvalidOperationException("载入后已有新的编辑，无法直接撤销载入。");
+        Change(prior.Before); libraryLoadUndo = null; SelectPage(4); feedback.Text = "已回到载入前的草稿";
+    }
+    public void UpdateLibraryEntry(Guid id)
+    {
+        librarySnapshot = library.Update(librarySnapshot ?? library.Read(), id, Draft); SelectPage(4); feedback.Text = "方案库条目已更新 · Windows 尚未修改";
+    }
+    public void DuplicateLibraryEntry(Guid id)
+    {
+        librarySnapshot = library.Duplicate(librarySnapshot ?? library.Read(), id); librarySelection = librarySnapshot.Entries.Last().Id; showArchived = false; SelectPage(4); feedback.Text = "已复制方案，原方案保留";
+    }
+    public void RenameLibraryEntry(Guid id, string name)
+    {
+        librarySnapshot = library.Rename(librarySnapshot ?? library.Read(), id, name); SelectPage(4); feedback.Text = "方案已重命名";
+    }
+    public void ArchiveLibraryEntry(Guid id, bool archived)
+    {
+        librarySnapshot = library.SetArchived(librarySnapshot ?? library.Read(), id, archived); librarySelection = null; SelectPage(4); feedback.Text = archived ? "方案已归档，可在“查看归档”中恢复" : "方案已恢复到列表";
+    }
     public void ImportDraft(string path)
     {
         var imported = ShellProfileFile.Import(path); Change(imported); SelectPage(page); feedback.Text = "方案已导入草稿 · 保存前可撤销";
@@ -283,8 +361,9 @@ public sealed class ShellSettingsWindow : Window
     public void ExportDraft(string path, string expectedRevision)
     {
         if (string.Equals(Path.GetFullPath(path), Path.GetFullPath(profilePath), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(Path.GetFullPath(path), Path.GetFullPath(profilePath + ".previous"), StringComparison.OrdinalIgnoreCase))
-            throw new IOException("请另选备份文件名；当前方案请使用“保存方案”。");
+            string.Equals(Path.GetFullPath(path), Path.GetFullPath(profilePath + ".previous"), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(Path.GetFullPath(path), Path.GetFullPath(profilePath + ".library.json"), StringComparison.OrdinalIgnoreCase))
+            throw new IOException("请另选备份文件名，不能覆盖当前方案、上一份记录或方案库。");
         ShellProfileFile.Save(path, Draft, expectedRevision); feedback.Text = "草稿已导出 · 当前保存状态不变";
     }
     public void RestorePreviousDraft()

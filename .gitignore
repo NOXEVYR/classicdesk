@@ -9,4 +9,5 @@ artifacts/
 .classicdesk-activation/
 NativeTransactions/
 ShellProfile.json
+*.library.json
 *.zip
