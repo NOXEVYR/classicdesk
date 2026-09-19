@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "engineVersion": "1.7.3",
+  "engineCommit": "c165997c54e71dad897460232d595db7cf2c06ab",
+  "installer": {
+    "url": "https://github.com/ramensoftware/windhawk/releases/download/v1.7.3/windhawk_setup.exe",
+    "bytes": 11570480,
+    "sha256": "5116cc1703384aac88b8d7a3b57f172aea5da32b6df7355fb2f8247d23813c8f"
+  },
+  "modsCommit": "f3ec3675168600d1decfcda97d2a12e375903ae9",
+  "modules": [
+    {
+      "id": "taskbar-start-button-position",
+      "version": "1.3.2",
+      "url": "https://mods.windhawk.net/mods/taskbar-start-button-position/1.3.2_64.dll",
+      "bytes": 220672,
+      "sha256": "0cf50d86f5b7c8645a6fe49643a4c84d4e50a26a8351094e60b47e784596bb18",
+      "sourceUrl": "https://raw.githubusercontent.com/ramensoftware/windhawk-mods/f3ec3675168600d1decfcda97d2a12e375903ae9/mods/taskbar-start-button-position.wh.cpp",
+      "sourceSha256": "273c6da6abfc035d86e297c2abf6b98cd53a9f25b3862a6b0da5490e434ff02b"
+    },
+    {
+      "id": "taskbar-icon-size",
+      "version": "1.3.10",
+      "url": "https://mods.windhawk.net/mods/taskbar-icon-size/1.3.10_64.dll",
+      "bytes": 325632,
+      "sha256": "9f5fc46d5fa94a533f5c707b17df4855e8d3236e5f5414d1e8e0588801d1086a",
+      "sourceUrl": "https://raw.githubusercontent.com/ramensoftware/windhawk-mods/f3ec3675168600d1decfcda97d2a12e375903ae9/mods/taskbar-icon-size.wh.cpp",
+      "sourceSha256": "b9ddcc0f3cea1d7db85e604b76868c4fbab4257c1f2f3fa018bb6350e1be9e6c"
+    },
+    {
+      "id": "explorer-frame-classic",
+      "version": "1.0.8",
+      "url": "https://mods.windhawk.net/mods/explorer-frame-classic/1.0.8_64.dll",
+      "bytes": 84992,
+      "sha256": "0f240cc45f712793b1cf6cb513e1835f5c3991429a6bc6d53d797797c292a50c",
+      "sourceUrl": "https://raw.githubusercontent.com/ramensoftware/windhawk-mods/f3ec3675168600d1decfcda97d2a12e375903ae9/mods/explorer-frame-classic.wh.cpp",
+      "sourceSha256": "122156524a9fa4eeb6949702e0728653f81a1e875791aaf7a28e6c7113cb136b"
+    },
+    {
+      "id": "explorer-context-menu-classic",
+      "version": "1.0.2",
+      "url": "https://mods.windhawk.net/mods/explorer-context-menu-classic/1.0.2_64.dll",
+      "bytes": 71168,
+      "sha256": "f9d0b4cc89a50bdd00b7e7b178291cf3feec90d2978c6270341349e852f78fe8",
+      "sourceUrl": "https://raw.githubusercontent.com/ramensoftware/windhawk-mods/f3ec3675168600d1decfcda97d2a12e375903ae9/mods/explorer-context-menu-classic.wh.cpp",
+      "sourceSha256": "15fb3759cb218be214a2528808e73ca7efb9b7c0199ec42d78c30602986bf7c5"
+    }
+  ],
+  "assets": [
+    {
+      "path": "windhawk.exe",
+      "bytes": 835160,
+      "sha256": "52db87dee0160a13cf51e31bee6320da09767582f1f359f8cf9a787d1228bf44",
+      "source": "installer",
+      "sourcePath": "windhawk.exe"
+    },
+    {
+      "path": "windhawk-x64-helper.exe",
+      "bytes": 18808,
+      "sha256": "d8f771ca3bf96dadb24767603acf01255c2b3bc509c9d7faf463edc388dbcd99",
+      "source": "installer",
+      "sourcePath": "windhawk-x64-helper.exe"
+    },
+    {
+      "path": "Engine/1.7.3/32/windhawk.dll",
+      "bytes": 927320,
+      "sha256": "67cdaaf26d342b3f2a2a84ea6f7474ac43340711675b66edef34cc3fcee1ea8f",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/32/windhawk.dll"
+    },
+    {
+      "path": "Engine/1.7.3/32/msdia140_windhawk.dll",
+      "bytes": 2173984,
+      "sha256": "d9c4fd69f7bc0bf1f9066df0502a57de5f6d73dfff99c9fe5c75b491aecee86b",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/32/msdia140_windhawk.dll"
+    },
+    {
+      "path": "Engine/1.7.3/32/symsrv_windhawk.dll",
+      "bytes": 328264,
+      "sha256": "7a9fadded044916c645789a1e7185b0bc83f226052dc93015d59826541dcfa4a",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/32/symsrv_windhawk.dll"
+    },
+    {
+      "path": "Engine/1.7.3/32/symsrv.yes",
+      "bytes": 1,
+      "sha256": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/32/symsrv.yes"
+    },
+    {
+      "path": "Engine/1.7.3/64/windhawk.dll",
+      "bytes": 979544,
+      "sha256": "0aad074caf156200be7a77e4615f9171cea884cde96baf90397366c28c4f10a1",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/64/windhawk.dll"
+    },
+    {
+      "path": "Engine/1.7.3/64/msdia140_windhawk.dll",
+      "bytes": 2244664,
+      "sha256": "6465aca7b9a162726ca98c6e633fc70b8cb2a8c0a4f90c2b32e0ca99fb5f9cf8",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/64/msdia140_windhawk.dll"
+    },
+    {
+      "path": "Engine/1.7.3/64/symsrv_windhawk.dll",
+      "bytes": 432184,
+      "sha256": "67bdff85d161888f2c6a8a385f9b35aa1c1c231ed3b59c01fa54f598ac37d374",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/64/symsrv_windhawk.dll"
+    },
+    {
+      "path": "Engine/1.7.3/64/symsrv.yes",
+      "bytes": 1,
+      "sha256": "36a9e7f1c95b82ffb99743e0c5c4ce95d83c9a430aac59f84ef3cbfab6145068",
+      "source": "installer",
+      "sourcePath": "Engine/$R1/64/symsrv.yes"
+    },
+    {
+      "path": "AppData/Engine/Mods/64/libc++.whl",
+      "bytes": 2110976,
+      "sha256": "74c541f76732d738642072e90f26343e44d66d97bb258db76f2f3bee7e30060c",
+      "source": "installer",
+      "sourcePath": "Compiler/x86_64-w64-mingw32/bin/libc++.dll"
+    },
+    {
+      "path": "AppData/Engine/Mods/64/libunwind.whl",
+      "bytes": 216064,
+      "sha256": "6e6d1e74d17ee361b3f3661faa3d07fa7597257df1cd3dd360719222e54aa36c",
+      "source": "installer",
+      "sourcePath": "Compiler/x86_64-w64-mingw32/bin/libunwind.dll"
+    },
+    {
+      "path": "AppData/Engine/Mods/64/windhawk-mod-shim.dll",
+      "bytes": 90240,
+      "sha256": "cb4808ede8e31abb5142657187ebf51449331112c1679a3bca6792d6d1fe09bf",
+      "source": "installer",
+      "sourcePath": "AppData/Engine/Mods/64/windhawk-mod-shim.dll"
+    },
+    {
+      "path": "AppData/Engine/Mods/64/taskbar-start-button-position_1.3.2.dll",
+      "bytes": 220672,
+      "sha256": "0cf50d86f5b7c8645a6fe49643a4c84d4e50a26a8351094e60b47e784596bb18",
+      "source": "module",
+      "sourcePath": "taskbar-start-button-position_1.3.2.dll"
+    },
+    {
+      "path": "AppData/Engine/Mods/64/taskbar-icon-size_1.3.10.dll",
+      "bytes": 325632,
+      "sha256": "9f5fc46d5fa94a533f5c707b17df4855e8d3236e5f5414d1e8e0588801d1086a",
+      "source": "module",
+      "sourcePath": "taskbar-icon-size_1.3.10.dll"
+    },
+    {
+      "path": "AppData/Engine/Mods/64/explorer-frame-classic_1.0.8.dll",
+      "bytes": 84992,
+      "sha256": "0f240cc45f712793b1cf6cb513e1835f5c3991429a6bc6d53d797797c292a50c",
+      "source": "module",
+      "sourcePath": "explorer-frame-classic_1.0.8.dll"
+    },
+    {
+      "path": "AppData/Engine/Mods/64/explorer-context-menu-classic_1.0.2.dll",
+      "bytes": 71168,
+      "sha256": "f9d0b4cc89a50bdd00b7e7b178291cf3feec90d2978c6270341349e852f78fe8",
+      "source": "module",
+      "sourcePath": "explorer-context-menu-classic_1.0.2.dll"
+    }
+  ]
+}

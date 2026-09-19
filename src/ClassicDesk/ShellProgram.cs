@@ -7,6 +7,19 @@ public static class ShellProgram
     [STAThread]
     public static int Main(string[] args)
     {
+        if ((args.Length == 2 && args[0] == "--check-runtime") || (args.Length == 1 && args[0] == "--inspect-system"))
+        {
+            try
+            {
+                // Diagnostics do not construct an Application, activate modules or create journals.
+                object report = args[0] == "--check-runtime"
+                    ? WindowsShellActivationHost.CheckPackage(args[1], ShellNativeController.ReviewedRuntimeManifest)
+                    : ShellBackendPlanner.Detect();
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                return 0;
+            }
+            catch (Exception e) { Console.Error.WriteLine("检查未通过：" + e.Message); return 1; }
+        }
         if (args.Length is 2 or 3 && args[0] == "--prepare-disabled-config")
         {
             try

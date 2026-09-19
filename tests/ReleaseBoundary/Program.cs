@@ -15,6 +15,22 @@ var checks = new[]
     new { name = "Missing components cannot produce enable or restore tickets", passed = !review.CanEnable && !review.CanRestore && review.EnableTicket is null && review.RestoreTicket is null }
 };
 var allChecks = checks.ToList();
+var sourceRoot = new DirectoryInfo(AppContext.BaseDirectory);
+while (sourceRoot is not null && !File.Exists(Path.Combine(sourceRoot.FullName, "runtime", "windows-x64-assets.json"))) sourceRoot = sourceRoot.Parent;
+if (sourceRoot is null) throw new DirectoryNotFoundException("Runtime lock source not found.");
+var manifestBytes = File.ReadAllBytes(Path.Combine(sourceRoot.FullName, "runtime", "windows-x64-assets.json"));
+allChecks.Add(new { name = "Reviewed runtime lock bytes match the compiled pin", passed = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(manifestBytes)) == ShellNativeController.ReviewedRuntimeManifest });
+foreach (var preset in ShellPresets.All)
+{
+    var originalProfile = preset.Profile;
+    var originalBytes = JsonSerializer.Serialize(originalProfile);
+    var effective = ShellNativeController.TaskbarOnly(originalProfile);
+    var unprobed = new ShellBackendEnvironment(DateTime.UtcNow, "X64", 26100, 0, "test", [], [], [], [], "absent", []);
+    var plan = ShellBackendPlanner.CreatePlan(effective, unprobed);
+    var selected = plan.Modules.Where(m => m.Selected).Select(m => m.Id).ToArray();
+    allChecks.Add(new { name = preset.Name + " selects only taskbar modules", passed = selected.Contains("taskbar-icon-size") && selected.All(id => id is "taskbar-icon-size" or "taskbar-start-button-position") && selected.Contains("taskbar-start-button-position") == originalProfile.StartOnLeft });
+    allChecks.Add(new { name = preset.Name + " retains draft and every unrelated option", passed = JsonSerializer.Serialize(originalProfile) == originalBytes && effective == (originalProfile with { ClassicRibbon = false, UseClassicNavigationBar = false, ClassicContextMenu = false }) });
+}
 Directory.CreateDirectory(journals);
 var id = Guid.NewGuid(); var journalPath = Path.Combine(journals, id.ToString("N") + ".json");
 var original = JsonSerializer.SerializeToUtf8Bytes(new ActivationJournal { Id = id, State = ShellActivationState.Active });

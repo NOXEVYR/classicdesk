@@ -1,0 +1,2 @@
+# The application pins these exact bytes across Windows and other checkouts.
+runtime/*.json text eol=lf

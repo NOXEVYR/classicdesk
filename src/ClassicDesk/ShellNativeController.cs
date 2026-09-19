@@ -9,11 +9,17 @@ public sealed class ShellNativeController : IShellNativeController
 {
     // This manifest and every referenced asset were reviewed from the fixed official package.
     // A self-consistent replacement manifest is not trusted by this application.
-    public const string ReviewedRuntimeManifest = "182526F1D8A347E9A5F04D110E348BC8B6A87EC1F50D35A898AF6E9F045DF98C";
+    public const string ReviewedRuntimeManifest = "87EBC2871F686E9E26DFF7CCDCC65CD181AC98DB80EAEC442B8D82720C3E139E";
     readonly string packageRoot, journalDirectory;
     readonly IActivationHost host;
     readonly ShellActivationCoordinator coordinator;
     readonly SemaphoreSlim gate = new(1, 1);
+    // First live milestone: retain the saved proposal, apply only taskbar modules.
+    public static ShellProfile TaskbarOnly(ShellProfile proposal)
+    {
+        ArgumentNullException.ThrowIfNull(proposal); proposal.Validate();
+        return proposal with { ClassicRibbon = false, UseClassicNavigationBar = false, ClassicContextMenu = false };
+    }
     public ShellNativeController(string root, string journals, IActivationHost adapter)
     {
         packageRoot = Path.GetFullPath(root); journalDirectory = Path.GetFullPath(journals); host = adapter;
@@ -51,7 +57,7 @@ public sealed class ShellNativeController : IShellNativeController
 
     ShellNativeReview Review(ShellProfile profile)
     {
-        profile.Validate();
+        profile = TaskbarOnly(profile);
         var pending = PendingRecords();
         if (!Directory.Exists(packageRoot) && pending.Length != 0)
             return new("有未完成的恢复记录，增强组件缺失",
@@ -77,7 +83,7 @@ public sealed class ShellNativeController : IShellNativeController
         if (preparation.Guards.OtherWindhawk != ActivationPresence.Absent)
             return new("已有增强引擎正在运行", "检测到另一个 Windhawk 实例，当前不能并行启动。请先处理已有实例，再检查此方案。");
         var confirmation = coordinator.CaptureConfirmation(check.Package, profile);
-        return new("可以开始首次切换", "运行组件与配置已核对。启用会备份当前任务栏对齐和本包设置，再启动后台增强引擎；不会重启资源管理器。部分效果可能需要重新打开窗口。", CanEnable: true, EnableTicket: confirmation);
+        return new("可以开始任务栏试用", "本次仅启用任务栏布局和尺寸；资源管理器与右键菜单选项仍保留在方案中，不在本次应用。启用会备份当前任务栏对齐和本包设置，再启动后台增强引擎；不会重启资源管理器。实际效果及整体占用仍需测试。", CanEnable: true, EnableTicket: confirmation);
     }
     ActivationJournal[] PendingRecords()
     {

@@ -16,9 +16,14 @@
     <Compile Include="../../src/ClassicDesk/ShellPreview.cs" Link="ShellPreview.cs" />
     <Compile Include="../../src/ClassicDesk/ShellProfile.cs" Link="ShellProfile.cs" />
     <Compile Include="../../src/ClassicDesk/ShellSettingsWindow.cs" Link="ShellSettingsWindow.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellNativePanel.cs" Link="ShellNativePanel.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellNativeController.cs" Link="ShellNativeController.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellActivation.cs" Link="ShellActivation.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellActivationHost.cs" Link="ShellActivationHost.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellBackendPlan.cs" Link="ShellBackendPlan.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellBackendConfig.cs" Link="ShellBackendConfig.cs" />
     <Page Include="../../src/ClassicDesk/ShellTheme.xaml" Link="ShellTheme.xaml" />
   </ItemGroup>
   <ItemGroup><Resource Include="../../src/ClassicDesk/Assets/starlight-anime.png" Link="Assets/starlight-anime.png"/><Resource Include="../../src/ClassicDesk/Assets/skin-*.png" Link="Assets/%(Filename)%(Extension)"/></ItemGroup>
   <ItemGroup><Resource Include="../../src/ClassicDesk/Assets/brand-starlight.png" Link="Assets/brand-starlight.png"/></ItemGroup>
 </Project>
-

@@ -185,6 +185,18 @@ internal static class FrontendChecks
             Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-inspect"));
             Require(calls == 1 && owner == window && received == window.Draft && !window.IsVisible, "检查委托未准确接收当前方案和 owner。");
         });
+        Check("任务栏试用面板只传递任务栏设置，并保留完整方案", () =>
+        {
+            var proposal = new ShellProfile(ClassicRibbon: true, ClassicContextMenu: true, Skin: "starlight");
+            var operations = new TaskbarReviewProbe();
+            var panel = new ShellNativePanel(proposal, operations); Windows.Add(panel);
+            Require(operations.Calls == 0, "构造面板触发了系统检查。");
+            Await(panel.RefreshAsync());
+            Require(operations.Received == ShellNativeController.TaskbarOnly(proposal) && proposal.ClassicRibbon && proposal.ClassicContextMenu, "试用范围不符或修改了完整方案。");
+            Require(Logical<TextBlock>(panel).Count(t => t.Text == "本次不应用 · 方案选项保留") == 2, "未明确标示未应用的两个模块。");
+            Require(!panel.EnableAvailable && !panel.RestoreAvailable, "没有有效结果时启用了操作按钮。");
+            Capture(panel, 620, 550, "任务栏试用-范围核对-620x550.png"); Bounds(panel, 620, 550);
+        });
         Check("布局示意卡与下拉选项双向同步", () =>
         {
             var window=New(Path.Combine(run,"visual-layout.json"));
@@ -464,6 +476,18 @@ internal static class FrontendChecks
         // Normalize the element's parent offset so moving the preview never hashes an empty crop.
         var drawing = new DrawingVisual(); using (var dc = drawing.RenderOpen()) dc.DrawRectangle(new VisualBrush(element), null, new Rect(0, 0, element.ActualWidth, element.ActualHeight)); bmp.Render(drawing);
         var bytes = new byte[bmp.PixelWidth * bmp.PixelHeight * 4]; bmp.CopyPixels(bytes, bmp.PixelWidth * 4, 0); return Convert.ToHexString(SHA256.HashData(bytes));
+    }
+    sealed class TaskbarReviewProbe : IShellNativeController
+    {
+        public int Calls;
+        public ShellProfile? Received;
+        public Task<ShellNativeReview> ReviewAsync(ShellProfile profile)
+        {
+            Calls++; Received = profile;
+            return Task.FromResult(new ShellNativeReview("任务栏组件已核对", "本次仅试用任务栏布局与尺寸。实际效果和占用需要实机验证。"));
+        }
+        public Task<ActivationResult> EnableAsync(ShellNativeReview review) => throw new InvalidOperationException("测试不允许启用。");
+        public Task<ActivationResult> RestoreAsync(ShellNativeReview review) => throw new InvalidOperationException("测试不允许恢复。");
     }
     static void Capture(Window window, int width, int height, string name)
     {

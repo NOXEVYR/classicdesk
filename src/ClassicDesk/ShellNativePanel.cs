@@ -36,7 +36,7 @@ public sealed class ShellNativePanel : Window
 
     public ShellNativePanel(ShellProfile proposal, IShellNativeController operations)
     {
-        profile = proposal; profile.Validate(); controller = operations;
+        profile = ShellNativeController.TaskbarOnly(proposal); controller = operations;
         Title = "ClassicDesk · 启用与恢复"; Width = 620; Height = 550; MinWidth = 520; MinHeight = 460;
         Background = Color("#F6F7F9"); Foreground = Color("#20232A");
         FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 12; Icon = AppIcons.Get("brand");
@@ -53,8 +53,8 @@ public sealed class ShellNativePanel : Window
         var summary = new StackPanel { Margin = new Thickness(14, 8, 14, 8) };
         SummaryRow(summary, "任务栏", profile.StartOnLeft ? "开始靠左，应用居中" : "开始与应用居中");
         SummaryRow(summary, "尺寸", $"图标 {profile.IconSize} · 栏高 {profile.TaskbarHeight} · 按钮宽 {profile.TaskbarButtonWidth} px");
-        SummaryRow(summary, "资源管理器", profile.ClassicRibbon ? "Windows 10 功能区 · 无标签页" : profile.UseClassicNavigationBar ? "经典导航栏" : "Windows 11 当前布局");
-        SummaryRow(summary, "右键菜单", profile.ClassicContextMenu ? "完整菜单" + (profile.ClassicMenuWithCtrl ? " · Ctrl 临时打开新版" : "") : "Windows 11 菜单");
+        SummaryRow(summary, "资源管理器", "本次不应用 · 方案选项保留");
+        SummaryRow(summary, "右键菜单", "本次不应用 · 方案选项保留");
         body.Children.Add(new Border { Background = Brushes.White, CornerRadius = new CornerRadius(9), BorderBrush = Color("#E1E6EE"), BorderThickness = new Thickness(1), Child = summary });
         var statusBox = new StackPanel { Margin = new Thickness(2, 20, 2, 0) }; state.FontSize = 15; statusBox.Children.Add(state); detail.Margin = new Thickness(0, 7, 0, 0); detail.Foreground = Color("#656C77"); detail.LineHeight = 20; statusBox.Children.Add(detail); body.Children.Add(statusBox);
         AutomationProperties.SetLiveSetting(state, AutomationLiveSetting.Polite);
@@ -64,7 +64,7 @@ public sealed class ShellNativePanel : Window
         refresh = Button("重新检查", () => _ = RefreshAsync()); refresh.HorizontalAlignment = HorizontalAlignment.Left; actions.Children.Add(refresh);
         var right = new StackPanel { Orientation = Orientation.Horizontal }; Grid.SetColumn(right, 1); actions.Children.Add(right);
         restore = Button("恢复原设置", () => _ = RestoreAsync()); restore.Margin = new Thickness(8, 0, 8, 0); restore.IsEnabled = false; right.Children.Add(restore);
-        enable = Button("启用此方案", () => _ = EnableAsync()); enable.Background = Color("#337CE9"); enable.Foreground = Brushes.White; enable.BorderBrush = Color("#2C73DE"); enable.IsEnabled = false; right.Children.Add(enable);
+        enable = Button("试用任务栏", () => _ = EnableAsync()); enable.Background = Color("#337CE9"); enable.Foreground = Brushes.White; enable.BorderBrush = Color("#2C73DE"); enable.IsEnabled = false; right.Children.Add(enable);
         AutomationProperties.SetAutomationId(enable, "native-enable"); AutomationProperties.SetAutomationId(restore, "native-restore");
         Loaded += (_, _) => _ = RefreshAsync();
         Closing += (_, e) => { if (applying) { e.Cancel = true; state.Text = "正在保存切换结果"; detail.Text = "完成后即可关闭。恢复记录会保留在本机。"; } };
@@ -113,7 +113,7 @@ public sealed class ShellNativePanel : Window
             review = null;
             state.Text = result.State switch { ShellActivationState.Active => "增强引擎已启动", ShellActivationState.Restored => "原设置已恢复", ShellActivationState.RolledBack => "切换未完成，已回退", _ => "需要检查恢复记录" };
             detail.Text = result.State switch {
-                ShellActivationState.Active => "配置与进程已回读。请检查任务栏与资源管理器的实际效果；实机效果尚未验收。",
+                ShellActivationState.Active => "配置与进程已回读。请检查任务栏布局与尺寸；实机效果和占用尚未验收。资源管理器与右键菜单模块保持停用。",
                 ShellActivationState.Restored => "已恢复本次事务拥有的原始设置，并确认自己的引擎退出。请检查实际桌面。",
                 _ => result.Error ?? "已保留记录，未把不确定状态当作成功。" };
             detail.Text += "\n记录：" + result.JournalId.ToString("N");
