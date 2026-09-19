@@ -1,8 +1,72 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 
 namespace ClassicDesk;
+
+/// <summary>Resolution-independent original desktop artwork, not a system screenshot.</summary>
+public sealed class DesktopBackdrop : FrameworkElement
+{
+    public static readonly DependencyProperty VariantProperty = DependencyProperty.Register(nameof(Variant), typeof(int), typeof(DesktopBackdrop), new FrameworkPropertyMetadata(0, FrameworkPropertyMetadataOptions.AffectsRender));
+    public int Variant { get => (int)GetValue(VariantProperty); set => SetValue(VariantProperty,value); }
+    public bool Thumbnail { get; init; }
+    public static ImageSource Anime => Art(4);
+    static readonly Dictionary<int, ImageSource> ArtCache = new();
+    static ImageSource Art(int variant)
+    {
+        if (ArtCache.TryGetValue(variant, out var cached)) return cached;
+        string name = variant switch { 5 => "skin-sakura.png", 6 => "skin-cloud.png", 7 => "skin-moon.png", _ => "starlight-anime.png" };
+        return ArtCache[variant] = LoadArt(name);
+    }
+    static ImageSource LoadArt(string name)
+    {
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.UriSource = new Uri("pack://application:,,,/ClassicDesk;component/Assets/" + name, UriKind.Absolute);
+        image.EndInit();
+        image.Freeze();
+        return image;
+    }
+    public DesktopBackdrop() { ClipToBounds = true; IsHitTestVisible = false; }
+    protected override void OnRender(DrawingContext dc)
+    {
+        double w=ActualWidth,h=ActualHeight; if(w<=0||h<=0)return;
+        Color C(string value)=>(Color)ColorConverter.ConvertFromString(value);
+        Brush B(string value)=>new SolidColorBrush(C(value));
+        var palette = Variant switch { 1 => new[]{"#E3EBFF","#96B6F2","#7793DF"}, 2 => new[]{"#E9EDFA","#BBC8E8","#869ACC"}, 3=>new[]{"#F4EEF9","#D9CEEC","#AF9ED2"}, 4=>new[]{"#EEF0FD","#D7D5EF","#ACA1D0"}, _=>new[]{"#DAEBFF","#9EC6F4","#6599DD"} };
+        dc.PushClip(new RectangleGeometry(new Rect(0,0,w,h),14,14));
+        dc.DrawRectangle(new LinearGradientBrush(C(palette[0]),C(palette[1]),40),null,new Rect(0,0,w,h));
+        if(Variant>=4) dc.DrawRectangle(new ImageBrush(Art(Variant)){Stretch=Stretch.UniformToFill,AlignmentX=AlignmentX.Right,AlignmentY=AlignmentY.Center},null,new Rect(0,0,w,h));
+        else if(Variant==0) {
+            for(int n=0;n<4;n++) { var x=w*.60+(n%2)*w*.12; var y=h*.13+(n/2)*h*.34; dc.DrawRectangle(new LinearGradientBrush(C("#38FFFFFF"),C("#B0FFFFFF"),20),new Pen(B("#55FFFFFF"),1),new Rect(x,y,w*.105,h*.29)); }
+        } else {
+            dc.PushTransform(new ScaleTransform(w/800,h/240));
+            for(int n=0;n<8;n++) {
+                dc.PushTransform(new RotateTransform(-35+n*9,560,230));
+                dc.DrawEllipse(new LinearGradientBrush(C("#D0FFFFFF"),C(palette[2]),n*18),new Pen(B("#50FFFFFF"),.7),new Point(570,95),125-n*8,190-n*11); dc.Pop();
+            } dc.Pop();
+        }
+        dc.DrawRectangle(new LinearGradientBrush(C("#55FFFFFF"),C("#08FFFFFF"),0),null,new Rect(0,0,w,h));
+        if(Thumbnail) {
+            double x=w*.10,y=h*.13,fw=w*.64,fh=h*.57;
+            dc.DrawRoundedRectangle(B("#150F2150"),null,new Rect(x+2,y+4,fw,fh),7,7);
+            dc.DrawRoundedRectangle(B("#F2FFFFFF"),new Pen(B("#CBFFFFFF"),1),new Rect(x,y,fw,fh),7,7);
+            dc.DrawRoundedRectangle(B("#E8EDFA"),null,new Rect(x+1,y+1,fw-2,16),6,6);
+            for(int n=0;n<3;n++) dc.DrawEllipse(B(n==0?"#CFBDDC":n==1?"#BCD0EA":"#B6C3EA"),null,new Point(x+9+n*8,y+8),2.3,2.3);
+            dc.DrawRoundedRectangle(B("#EDF0FA"),null,new Rect(x+6,y+22,fw*.24,fh-28),3,3);
+            for(int n=0;n<3;n++) { dc.DrawImage(AppIcons.Get(n==0?"folder":n==1?"picture":"document"),new Rect(x+fw*.33,y+23+n*13,11,11)); dc.DrawRoundedRectangle(B("#D8DEEE"),null,new Rect(x+fw*.33+17,y+27+n*13,fw*.42-n*5,3),1.5,1.5); }
+            double barW=w-16,barX=(w-barW)/2;
+            dc.DrawRoundedRectangle(B("#EFFFFFFF"),new Pen(B("#F5FFFFFF"),1),new Rect(barX,h-28,barW,21),Variant==3?7:4,Variant==3?7:4);
+            bool centered=Variant is 1 or 3 or 4; double first=centered?w/2-37:w/2-23;
+            if(!centered)dc.DrawImage(AppIcons.Get("start"),new Rect(barX+7,h-24,12,12));
+            string[] icons=centered?["start","folder","picture","context-menu"]:["folder","picture","context-menu"];
+            for(int n=0;n<icons.Length;n++)dc.DrawImage(AppIcons.Get(icons[n]),new Rect(first+n*19,h-24,12,12));
+        }
+        dc.Pop();
+    }
+}
 
 public enum ShellPreviewKind { Taskbar, Explorer, ContextMenu }
 
@@ -77,9 +141,9 @@ public sealed class ShellPreview : FrameworkElement
                 Shape(dc, "M 3,10 L 21,10 Q 23,10 22.7,12 L 21.4,19.4 Q 21.1,21 19.5,21 L 4,21 Q 2,21 1.8,19 L 1.2,12 Q 1,10 3,10 Z", "#F7C75B");
                 Line(dc, 4, 11.5, 20, 11.5, "#FFE5A0", 1); break;
             case "browser":
-                dc.DrawEllipse(G("#57CFC0", "#268BE5"), null, new(12, 12), 10.5, 10.5);
+                dc.DrawEllipse(G("#5D6BC9", "#268BE5"), null, new(12, 12), 10.5, 10.5);
                 Shape(dc, "M 3,14 C 7,21 18,21 22,11 C 19,15 15,15 12,13 C 8,10 4,10 3,14 Z", "#1D7CCC");
-                Shape(dc, "M 3,11 C 8,3 15,5 17,9 C 18,12 13,14 9,11 C 13,16 20,15 22,10 C 20,1 8,-1 3,11 Z", "#68DAC4"); break;
+                Shape(dc, "M 3,11 C 8,3 15,5 17,9 C 18,12 13,14 9,11 C 13,16 20,15 22,10 C 20,1 8,-1 3,11 Z", "#6E7BD4"); break;
             case "photo":
                 Rect(dc, 1, 2, 22, 20, "#E3EEFF", 4); dc.DrawEllipse(B("#F5C454"), null, new(17, 8), 3, 3);
                 Shape(dc, "M 2,19 L 8,10 L 14,17 L 18,12 L 22,18 L 22,21 L 2,21 Z", "#5499D8"); break;
@@ -105,7 +169,7 @@ public sealed class ShellPreview : FrameworkElement
             case "delete": Shape(dc, "M 5,7 L 6,21 L 18,21 L 19,7 M 3,6 L 21,6 M 8,6 L 8,3 L 16,3 L 16,6 M 10,10 L 10,17 M 14,10 L 14,17", null, color); break;
             case "check": Shape(dc, "M 4,12 L 9,17 L 20,6", null, color, 1.8); break;
             case "new":
-                Icon(dc, "folder", 0, 0, 24); dc.DrawEllipse(B("#4A9D83"), P("#FFFFFF", 1.2), new(18, 17), 5.5, 5.5); Line(dc, 15, 17, 21, 17, "#FFFFFF", 1.4); Line(dc, 18, 14, 18, 20, "#FFFFFF", 1.4); break;
+                Icon(dc, "folder", 0, 0, 24); dc.DrawEllipse(B("#4E5899"), P("#FFFFFF", 1.2), new(18, 17), 5.5, 5.5); Line(dc, 15, 17, 21, 17, "#FFFFFF", 1.4); Line(dc, 18, 14, 18, 20, "#FFFFFF", 1.4); break;
             case "details":
                 Rect(dc, 4, 2, 16, 21, "#F9FBFE", 2, "#98A6B8"); dc.DrawEllipse(B(Blue), null, new(12, 8), 1.1, 1.1); Line(dc, 12, 12, 12, 18, Blue, 1.8); break;
             case "pin": Shape(dc, "M 7,3 L 17,3 L 16,11 L 20,15 L 4,15 L 8,11 Z M 12,15 L 12,22", null, color); break;

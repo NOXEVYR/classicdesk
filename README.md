@@ -1,8 +1,26 @@
-# ClassicDesk 0.6.0 公开预览版
+# ClassicDesk 0.10.0 界面开发版
 
-[← 返回 portfolio](https://github.com/turnsolesama/portfolio) · [Releases · v0.6.0-preview](https://github.com/turnsolesama/classicdesk/releases/tag/v0.6.0-preview)
+0.10 采用紫色星光显示器应用图标，保留线性导航图标和彩色文件预览图标，并将布局方案与界面皮肤独立管理。换肤保留图标和布局参数，换布局保留皮肤；支持 Win10 方案搭配星空、樱月等皮肤。
 
-ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管理器与右键菜单的外观和布局调整。当前公开预览版提供三页修改方案编辑与原创参数图示，采用 C# / WPF 实现。
+设置页顶部提供 Win10 方案、Win11 方案、紧凑办公、宽松布局四个入口；右上角选择皮肤。侧栏新增独立皮肤资料库，包含原生浅色、雾白极简、星空二次元、樱月二次元、云海二次元、月夜二次元。新增三款二次元背景均无人物。
+
+本地开发版已采用左侧分类导航、固定预览、分组设置和底部操作区。本次以 0.10.0-preview 预览版同步源码及 Windows 运行包，保留历史版本。
+
+## 本版新增
+
+- **布局与皮肤**：四种布局、六款皮肤自由组合，随 JSON 保存和导入导出。旧版星空方案在内存中拆分为布局标识与皮肤，保留每项功能参数，保存前不改写旧文件。
+- **方案管理**：查看三类设置摘要及修改项；导入 JSON、导出当前草稿、载入上一份保存记录。
+- **预览与编辑**：设置页的预览固定在上方，高级参数独立滚动；每项参数显示简短说明，保留 Windows 11 参考对比。
+- **按布局重置**：重置本页恢复所选布局的默认参数，保留其他页面的设置与当前皮肤。
+- **快捷键**：Ctrl+S 保存，Ctrl+O 导入，Ctrl+Shift+S 导出。
+
+导入先验证文件格式、参数名称、重复项和取值，失败不改变草稿；导出不改变当前方案的保存状态；载入历史方案后需要再点击“保存方案”才会写回。保存继续保留外部修订检查与上一份原始文件备份。
+
+以上功能用于方案编辑与预览，不会自动修改 Windows，也不包含 StartAllBack 的程序、图标或增强引擎。系统启用仍通过“系统应用检查”进入原有流程。
+
+[← 返回 portfolio](https://github.com/turnsolesama/portfolio) · [Releases · v0.10.0-preview](https://github.com/turnsolesama/classicdesk/releases/tag/v0.10.0-preview)
+
+ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管理器与右键菜单的外观和布局调整。当前公开预览版提供布局与皮肤管理、三类设置编辑与原创参数图示，采用 C# / WPF 实现。
 
 **这个下载包可用于预览和保存方案，没有捆绑 Windhawk 等第三方增强运行组件，因此当前公开包不能直接启用真实桌面改造。** 原生宿主与恢复代码已纳入源码，但尚未完成 Windows 实机效果验收。图片是示意图，不是系统效果截图。
 
@@ -12,6 +30,14 @@ ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管�
 
 ![任务栏界面预览](docs/screenshots/taskbar.png)
 
+![风格预设画廊](docs/screenshots/presets.png)
+
+![独立皮肤资料库](docs/screenshots/skins.png)
+
+![星空二次元方案](docs/screenshots/starlight.png)
+
+插画素材及生成提示词见 [星空素材说明](docs/ARTWORK.md) 与 [新增皮肤素材说明](docs/SKIN-ARTWORK.md)。
+
 <details>
 <summary>查看资源管理器与右键菜单页面</summary>
 
@@ -20,6 +46,10 @@ ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管�
 ![右键菜单界面预览](docs/screenshots/context-menu.png)
 
 </details>
+
+## 下载
+
+[Windows x64 预览版 ZIP](https://github.com/turnsolesama/classicdesk/releases/download/v0.10.0-preview/ClassicDesk-0.10.0-preview-windows-x64.zip) · [SHA-256 校验](releases/0.10.0-preview/SHA256SUMS.txt)
 
 ## 运行
 

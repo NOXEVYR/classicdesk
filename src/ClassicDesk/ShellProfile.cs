@@ -10,13 +10,17 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
     bool ClassicRibbon = true, bool ClassicContextMenu = true,
     int TaskbarButtonWidth = 44, int SmallIconSize = 16, int SmallTaskbarButtonWidth = 32,
     bool OtherSystemButtonsOnLeft = true, bool StartMenuOnLeft = true, bool SearchMenuOnLeft = false,
-    bool ClassicMenuWithCtrl = true, bool UseClassicNavigationBar = false)
+    bool ClassicMenuWithCtrl = true, bool UseClassicNavigationBar = false, string Appearance = "win10", string Skin = "classic")
 {
     public static readonly int[] IconSizes = [16, 20, 24, 28, 32];
     public static readonly int[] TaskbarHeights = [40, 44, 48, 52, 56, 64];
     public static readonly int[] ButtonWidths = [32, 36, 40, 44, 48, 52, 56, 60, 64];
     public void Validate()
     {
+        if (Appearance is not ("win10" or "win11" or "compact" or "cupertino"))
+            throw new InvalidDataException("无法识别此布局方案。");
+        if (!ShellSkins.All.Any(s => s.Id == Skin))
+            throw new InvalidDataException("无法识别此界面皮肤。");
         if (!IconSizes.Contains(IconSize) || !IconSizes.Contains(SmallIconSize) ||
             !TaskbarHeights.Contains(TaskbarHeight) || !ButtonWidths.Contains(TaskbarButtonWidth) ||
             !ButtonWidths.Contains(SmallTaskbarButtonWidth))
@@ -33,16 +37,75 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
 
 public sealed record ShellProfileSnapshot(ShellProfile Profile, string Revision);
 
+public sealed record ShellPreset(string Name, string Description, ShellProfile Profile);
+public static class ShellPresets
+{
+    public static IReadOnlyList<ShellPreset> All { get; } = Array.AsReadOnly(new[] {
+        new ShellPreset("Win10 方案", "经典功能区与完整菜单。开始靠左、应用居中，保留熟悉的操作习惯。", new ShellProfile()),
+        new ShellPreset("Win11 方案", "开始与应用居中，使用现代命令栏和简洁右键菜单。", new ShellProfile(StartOnLeft: false, ClassicRibbon: false, ClassicContextMenu: false, Appearance: "win11")),
+        new ShellPreset("紧凑办公", "更小的图标与任务栏；经典导航栏保留标签页。", new ShellProfile(IconSize: 20, TaskbarHeight: 40, TaskbarButtonWidth: 36, ClassicRibbon: false, UseClassicNavigationBar: true, Appearance: "compact")),
+        new ShellPreset("宽松布局", "28 px 居中图标、更宽按钮与经典导航栏，保留 Windows 操作方式。", new ShellProfile(StartOnLeft: false, IconSize: 28, TaskbarHeight: 56, TaskbarButtonWidth: 56, ClassicRibbon: false, ClassicContextMenu: false, UseClassicNavigationBar: true, Appearance: "cupertino"))
+    });
+    public static int Index(ShellProfile profile) => All.Select((preset, index) => (preset, index)).First(item => item.preset.Profile.Appearance == profile.Appearance).index;
+    public static string DisplayName(ShellProfile profile) => All[Index(profile)].Name;
+    public static IReadOnlyList<string> Changes(ShellProfile before, ShellProfile after)
+    {
+        var names = new[] { "开始按钮位置", "图标大小", "任务栏高度", "功能区", "完整右键菜单", "按钮宽度", "小图标尺寸", "小按钮宽度", "系统按钮位置", "开始菜单位置", "搜索菜单位置", "Ctrl 菜单切换", "经典导航栏", "布局方案", "界面皮肤" };
+        var properties = new[] { "StartOnLeft", "IconSize", "TaskbarHeight", "ClassicRibbon", "ClassicContextMenu", "TaskbarButtonWidth", "SmallIconSize", "SmallTaskbarButtonWidth", "OtherSystemButtonsOnLeft", "StartMenuOnLeft", "SearchMenuOnLeft", "ClassicMenuWithCtrl", "UseClassicNavigationBar", "Appearance", "Skin" };
+        return properties.Select((name, i) => (Property: typeof(ShellProfile).GetProperty(name)!, Label: names[i]))
+            .Where(item => !Equals(item.Property.GetValue(before), item.Property.GetValue(after))).Select(item => item.Label).ToArray();
+    }
+}
+
+public sealed record ShellSkin(string Id, string Name, string Description, int Backdrop, string Accent, string Sidebar, string Workspace);
+public static class ShellSkins
+{
+    public static IReadOnlyList<ShellSkin> All { get; } = Array.AsReadOnly(new[] {
+        new ShellSkin("classic", "原生浅色", "冷白与雾蓝，清楚、熟悉的 Windows 质感。", 0, "#627CDD", "#F1F4FC", "#F5F5F7"),
+        new ShellSkin("frost", "雾白 · 极简", "银白与轻雾紫，克制的留白与柔和层次。", 3, "#8079B3", "#F3F2F8", "#F7F6F9"),
+        new ShellSkin("starlight", "星空 · 二次元", "银发与星空，延续原来的二次元插画。", 4, "#9474CF", "#F6F2FC", "#F8F6FC"),
+        new ShellSkin("sakura", "樱月 · 二次元", "淡樱、弯月与远山，无人物的粉紫天空。", 5, "#B374A2", "#FCF1F7", "#FCF7FA"),
+        new ShellSkin("cloud", "云海 · 二次元", "奶白云海与晴空，无人物的清透雾蓝。", 6, "#537FAC", "#EEF5FC", "#F5F8FC"),
+        new ShellSkin("moon", "月夜 · 二次元", "月光、群山与薄雾，无人物的静谧蓝紫。", 7, "#767DB8", "#F0F1FA", "#F5F5FB")
+    });
+    public static int Index(ShellProfile profile) => All.Select((skin, index) => (skin, index)).First(item => item.skin.Id == profile.Skin).index;
+}
+
 public static class ShellProfileFile
 {
+    public static ShellProfile Import(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (stream.Length > 65536) throw new InvalidDataException("方案文件不能超过 64 KB。");
+        using var document = JsonDocument.Parse(stream);
+        if (document.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidDataException("请选择 ClassicDesk 导出的方案 JSON。");
+        var properties = document.RootElement.EnumerateObject().ToArray();
+        var known = typeof(ShellProfile).GetProperties().Where(p => p.Name != nameof(ShellProfile.PreviewOptions)).Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+        if (properties.Length == 0 || properties.Any(p => !known.Contains(p.Name)) || properties.Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != properties.Length)
+            throw new InvalidDataException("方案包含未知或重复参数，或没有可识别的设置。");
+        return Decode(document.RootElement);
+    }
+    static ShellProfile Decode(JsonElement root)
+    {
+        var value = root.Deserialize<ShellProfile>() ?? throw new InvalidDataException("方案内容为空。");
+        // Older files combined skin and layout in Appearance. Migrate in memory only;
+        // keep every functional parameter and retain the original bytes until Save.
+        if (!root.TryGetProperty(nameof(ShellProfile.Skin), out _))
+        {
+            if (value.Appearance == "starlight") value = value with { Appearance = "cupertino", Skin = "starlight" };
+            else if (value.Appearance == "cupertino") value = value with { Skin = "frost" };
+        }
+        value.Validate(); return value;
+    }
     public static string DefaultPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassicDesk", "ShellProfile.json");
     public static ShellProfileSnapshot Load(string path)
     {
         if (!File.Exists(path)) return new(new(), "missing");
         if (new FileInfo(path).Length > 65536) throw new InvalidDataException("方案文件异常过大，已保留原文件。");
         var bytes = File.ReadAllBytes(path);
-        var profile = JsonSerializer.Deserialize<ShellProfile>(bytes) ?? throw new InvalidDataException("方案文件为空。");
-        profile.Validate(); return new(profile, Convert.ToHexString(SHA256.HashData(bytes)));
+        using var document = JsonDocument.Parse(bytes);
+        var profile = Decode(document.RootElement);
+        return new(profile, Convert.ToHexString(SHA256.HashData(bytes)));
     }
     public static ShellProfile Read(string path) => Load(path).Profile;
     public static string Revision(string path) => File.Exists(path) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))) : "missing";

@@ -5,7 +5,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.6.0-preview</Version>
+    <Version>0.10.0-preview</Version>
     <AssemblyName>ClassicDesk</AssemblyName>
     <StartupObject>ClassicDesk.ShellProgram</StartupObject>
     <ApplicationIcon>Assets/ClassicDesk.ico</ApplicationIcon>
@@ -21,4 +21,6 @@
     <Compile Include="AppIcons.cs;ShellPreview.cs;ShellProfile.cs;ShellSettingsWindow.cs;ShellBackendPlan.cs;ShellBackendConfig.cs;ShellProgram.cs;ShellActivation.cs;ShellActivationHost.cs;ShellNativeController.cs;ShellNativePanel.cs" />
     <Resource Include="Assets/ClassicDesk.ico" />
   </ItemGroup>
+  <ItemGroup><Resource Include="Assets/starlight-anime.png"/><Resource Include="Assets/skin-*.png"/></ItemGroup>
+  <ItemGroup><Resource Include="Assets/brand-starlight.png" Link="Assets/brand-starlight.png"/></ItemGroup>
 </Project>

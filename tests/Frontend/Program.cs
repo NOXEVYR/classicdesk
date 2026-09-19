@@ -35,6 +35,8 @@ internal static class FrontendChecks
         {
             var result = new ShellSettingsWindow(path: file, inspectPlan: draft => { InspectCalls++; return Task.FromException<string>(new IOException("隔离测试：只检查错误反馈，不打开检查对话框。")); }); Windows.Add(result); return result;
         }
+        var brandDrawing = new DrawingVisual(); using(var dc = brandDrawing.RenderOpen()) dc.DrawImage(AppIcons.Get("brand"),new Rect(0,0,256,256));
+        var brandBitmap = new RenderTargetBitmap(256,256,96,96,PixelFormats.Pbgra32); brandBitmap.Render(brandDrawing); var brandEncoder = new PngBitmapEncoder(); brandEncoder.Frames.Add(BitmapFrame.Create(brandBitmap)); using(var brandFile=File.Create(Path.Combine(Output,"brand.png"))) brandEncoder.Save(brandFile);
         var desk = New(path);
         Check("缺失方案只读加载默认值，不创建文件", () =>
         {
@@ -42,10 +44,11 @@ internal static class FrontendChecks
             Require(!File.Exists(path), "只读加载创建了方案文件。"); Require(!Field<Button>(desk, "save").IsEnabled, "未修改时保存仍可用。");
             Require(Field<TextBlock>(desk, "draftBadge").Text == "默认方案" && Field<Button>(desk, "undo").Visibility == Visibility.Collapsed, "默认方案误称已保存，或未修改仍出现撤销占位。");
         });
-        Check("主导航仅三项且使用真实矢量资源", () =>
+        Check("侧栏包含三项设置与预设、方案管理，使用真实矢量资源", () =>
         {
             Layout(desk, 820, 610); var routes = Field<List<Button>>(desk, "routes"); var keys = new[] { "taskbar", "folder", "context-menu" };
             Require(routes.Count == 3, "主导航不是三项。"); Require(ReferenceEquals(desk.Icon, AppIcons.Get("brand")), "窗口品牌资源错误。");
+            Require(Field<Dictionary<int, Button>>(desk, "sidebarRoutes").Count == 6, "侧栏页面不完整。");
             for (int i = 0; i < 3; i++) Require(ReferenceEquals(Logical<Image>(routes[i]).Single().Source, AppIcons.Get(keys[i])), "导航图标与路由不对应。");
             Require(!Logical<TextBlock>(desk).Any(t => t.Text.Contains("显示隐藏文件", StringComparison.Ordinal) || t.Text.Contains("显示文件扩展名", StringComparison.Ordinal)), "前端混入普通系统开关。");
         });
@@ -61,11 +64,11 @@ internal static class FrontendChecks
                     Capture(desk, size.Width, size.Height, new[] { "任务栏", "资源管理器", "右键菜单" }[route] + $"-{size.Width}x{size.Height}.png");
                 });
             }
-        Check("默认客户区任务栏四项与说明无需滚动", () =>
+        Check("默认客户区常用尺寸完整显示，预览固定", () =>
         {
-            desk.SelectPage(0); Layout(desk, 820, 610);
-            var scroll = Visuals<ScrollViewer>((FrameworkElement)desk.Content).Single(s => s.Content is StackPanel panel && Logical<ShellPreview>(panel).Any());
-            Require(scroll.ScrollableHeight <= 1, $"默认任务栏页仍需滚动 {scroll.ScrollableHeight:0.#} DIP。");
+            desk.SelectPage(0); Layout(desk, 1080, 820);
+            var scroll = Field<ScrollViewer>(desk, "scroll");
+            var last = Choice(desk, "按钮宽度"); var at = last.TransformToAncestor(scroll).Transform(new Point()); Require(at.Y >= 0 && at.Y + last.ActualHeight <= scroll.ActualHeight + 1, "默认窗口的常用尺寸被裁切。");
         });
         Check("新 ComboBox 模板实际载入，选择框有圆角且标签可见", () =>
         {
@@ -80,9 +83,9 @@ internal static class FrontendChecks
         Check("窄屏任务栏滚动后第四项与说明完整可访问", () =>
         {
             desk.SelectPage(0); Layout(desk, 740, 550);
-            var scroll = Visuals<ScrollViewer>((FrameworkElement)desk.Content).Single(s => s.Content is StackPanel panel && Logical<ShellPreview>(panel).Any());
+            var scroll = Field<ScrollViewer>(desk, "scroll");
             scroll.ScrollToEnd(); Layout(desk, 740, 550);
-            var control = Choice(desk, "任务栏高度"); var at = control.TransformToAncestor(scroll).Transform(new Point());
+            var control = Choice(desk, "任务栏高度"); control.BringIntoView(); Layout(desk, 740, 550); var at = control.TransformToAncestor(scroll).Transform(new Point());
             Require(at.Y >= 0 && at.Y + control.ActualHeight <= scroll.ActualHeight + 1, "滚动后任务栏高度选项仍不可访问。");
             Require(scroll.ScrollableHeight == 0 || scroll.VerticalOffset > 0, "可滚动内容没有移动。");
             Capture(desk, 740, 550, "任务栏-740x550-下方设置.png"); scroll.ScrollToTop();
@@ -108,14 +111,14 @@ internal static class FrontendChecks
             desk.SelectPage(1); Require(Choice(desk, "工具区样式").SelectedIndex == 0, "Ribbon 草稿跨页丢失。");
             desk.SelectPage(2); Require(Toggle(desk, "完整右键菜单").IsChecked == false && desk.Draft == prior, "菜单草稿跨页丢失。");
         });
-        Check("前后切换只改变演示；修改控件自动回到我的方案", () =>
+        Check("原生对比只改变演示；修改控件自动回到所选方案", () =>
         {
             desk.SelectPage(0); var preview = Field<ShellPreview>(desk, "preview"); var prior = desk.Draft;
-            Click(Field<List<Button>>(desk, "comparisons")[0]); Layout(desk, 820, 610); var before = ImageHash(preview);
-            Require(preview.Before && desk.Draft == prior, "前态演示改变了草稿。"); Click(Field<List<Button>>(desk, "comparisons")[1]); Layout(desk, 820, 610);
+            Click(Field<Button>(desk, "referenceButton")); Layout(desk, 820, 610); var before = ImageHash(preview);
+            Require(preview.Before && desk.Draft == prior, "前态演示改变了草稿。"); Click(Field<Button>(desk, "referenceButton")); Layout(desk, 820, 610);
             Require(!preview.Before && ImageHash(preview) != before && desk.Draft == prior, "前后演示状态或内容不正确。");
             desk.SetComparison(true); Choice(desk, "图标大小").SelectedItem = "20 px";
-            Require(!preview.Before && desk.Draft.IconSize == 20, "编辑后没有回到我的方案。");
+            Require(!preview.Before && desk.Draft.IconSize == 20, "编辑后没有回到所选方案。");
             Capture(desk, 820, 610, "任务栏-已编辑方案.png");
         });
         Check("高级布局五项编辑保留；开始/搜索依赖按底层语义生效", () =>
@@ -181,6 +184,116 @@ internal static class FrontendChecks
             window.SelectPage(1); Choice(window, "工具区样式").SelectedIndex = 2; window.SaveDraft(); Require(calls == 0, "构造、切页或保存隐式发起了原生操作。");
             Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-inspect"));
             Require(calls == 1 && owner == window && received == window.Draft && !window.IsVisible, "检查委托未准确接收当前方案和 owner。");
+        });
+        Check("布局示意卡与下拉选项双向同步", () =>
+        {
+            var window=New(Path.Combine(run,"visual-layout.json"));
+            Click(Logical<Button>(window).Single(b=>AutomationProperties.GetAutomationId(b)=="shell-layout-1"));
+            Require(!window.Draft.StartOnLeft && Choice(window,"开始按钮位置").SelectedIndex==1,"布局卡没有更新草稿和下拉项。");
+            Choice(window,"开始按钮位置").SelectedIndex=0;
+            Require(Logical<Button>(window).Single(b=>AutomationProperties.GetAutomationId(b)=="shell-layout-0").Tag?.ToString()=="selected","下拉项没有更新布局卡选中态。");
+        });
+        Check("预设实际改变草稿，跨页保留且不提前写盘", () =>
+        {
+            var file = Path.Combine(run, "presets.json"); var window = New(file); window.SelectPage(3);
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-preset-2"));
+            Require(window.Draft.IconSize == 20 && window.Draft.UseClassicNavigationBar && !File.Exists(file), "预设未完整载入或提前写盘。");
+            window.SelectPage(0); Require(Choice(window, "图标大小").SelectedItem?.ToString() == "20 px", "预设与设置值不一致。");
+            Click(Field<Button>(window, "undo")); Require(window.Draft == new ShellProfile(), "预设不能撤销。");
+        });
+        for (int presetIndex = 0; presetIndex < ShellPresets.All.Count; presetIndex++)
+        {
+            int index = presetIndex;
+            Check($"风格切换、命名与保存往返 · {ShellPresets.All[index].Name}", () =>
+            {
+                var file = Path.Combine(run, $"style-{index}.json"); var export = Path.Combine(run, $"style-export-{index}.json");
+                var window = New(file); var tabs = Field<List<Button>>(window, "presetTabs"); Click(tabs[index]);
+                Require(window.Draft == ShellPresets.All[index].Profile, "快捷切换没有载入完整方案。");
+                window.SelectPage(1); window.SelectPage(0); Layout(window, 1080, 820);
+                Require(Field<DesktopBackdrop>(window, "desktopBackdrop").Variant == (index==0?0:1), "原生浅色预览错误。");
+                Require(tabs[index].Content?.ToString() == ShellPresets.All[index].Name && tabs[index].Tag?.ToString()=="selected", "方案标签未正确选中。");
+                window.ExportDraft(export, "missing"); window.ApplyPreset((index + 1) % ShellPresets.All.Count); window.ImportDraft(export);
+                Require(tabs[index].Tag?.ToString()=="selected" && window.Draft == ShellPresets.All[index].Profile, "导入没有恢复布局选择。");
+                window.SaveDraft(); Require(ShellProfileFile.Read(file) == ShellPresets.All[index].Profile, "持久化丢失风格。");
+                Choice(window, "图标大小").SelectedItem = "32 px";
+                Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-reset-page"));
+                Require(window.Draft == ShellPresets.All[index].Profile, "重置没有恢复当前风格参数。");
+                Layout(window, 1080, 820); Capture(window, 1080, 820, $"风格-{index}.png");
+            });
+        }
+        for (int skinIndex=0;skinIndex<ShellSkins.All.Count;skinIndex++)
+        {
+            int index=skinIndex;
+            Check($"皮肤独立切换、保留参数与保存往返 · {ShellSkins.All[index].Name}",()=>
+            {
+                var file=Path.Combine(run,$"skin-{index}.json");var export=Path.Combine(run,$"skin-export-{index}.json");var window=New(file);
+                Choice(window,"图标大小").SelectedItem="32 px";Choice(window,"任务栏高度").SelectedItem="64 px";
+                var before=window.Draft;var icon=window.Icon;var preview=Field<ShellPreview>(window,"preview");
+                Field<ComboBox>(window,"skinPicker").SelectedIndex=index;
+                Require(window.Draft==(before with { Skin=ShellSkins.All[index].Id }) && preview.Options==before.PreviewOptions,"换肤覆盖了布局参数。");
+                Require(ReferenceEquals(icon,window.Icon),"换肤更换了原版图标。");
+                window.SelectPage(5);Click(Logical<Button>(window).Single(b=>AutomationProperties.GetAutomationId(b)=="shell-skin-"+index));window.SelectPage(2);
+                window.ApplyPreset(1);Require(window.Draft.Skin==ShellSkins.All[index].Id&&!window.Draft.ClassicContextMenu,"换布局覆盖了皮肤。");
+                window.ApplyPreset(0);Require(window.Draft==(new ShellProfile(Skin:ShellSkins.All[index].Id)),"Win10 与皮肤组合错误。");
+                window.SaveDraft();window.ExportDraft(export,"missing");window.ApplySkin((index+1)%ShellSkins.All.Count);window.ImportDraft(export);
+                Require(window.Draft==ShellProfileFile.Read(file) && Field<ComboBox>(window,"skinPicker").SelectedIndex==index,"皮肤保存或导入失效。");
+                Toggle(window,"完整右键菜单").IsChecked=false;Click(Logical<Button>(window).Single(b=>AutomationProperties.GetAutomationId(b)=="shell-reset-page"));
+                Require(window.Draft.ClassicContextMenu&&window.Draft.Skin==ShellSkins.All[index].Id,"本页重置覆盖皮肤。");
+                Layout(window,1080,820);Capture(window,1080,820,$"皮肤-{index}-菜单.png");
+                Require(Field<DesktopBackdrop>(window,"desktopBackdrop").Variant==ShellSkins.All[index].Backdrop,"皮肤背景不对应。");
+                if(index==3){Layout(window,740,550);Bounds(window,740,550);Capture(window,740,550,"皮肤-最小窗口.png");}
+                window.SelectPage(0);Layout(window,1080,820);Capture(window,1080,820,$"皮肤-{index}-任务栏.png");
+            });
+        }
+        Check("旧星空方案在内存拆分，参数与磁盘修订保持",()=>
+        {
+            var file=Path.Combine(run,"legacy-starlight.json");
+            File.WriteAllText(file,"{\"Appearance\":\"starlight\",\"IconSize\":28,\"TaskbarHeight\":52,\"ClassicRibbon\":false,\"ClassicContextMenu\":false}");var hash=Hash(file);
+            var snapshot=ShellProfileFile.Load(file);var profile=snapshot.Profile;
+            Require(profile.Appearance=="cupertino"&&profile.Skin=="starlight"&&profile.IconSize==28&&profile.TaskbarHeight==52&&!profile.ClassicRibbon&&!profile.ClassicContextMenu,"旧版迁移丢失参数。");
+            Require(Hash(file)==hash&&snapshot.Revision==hash&&ShellProfileFile.Import(file)==profile,"迁移提前写入磁盘或修订不一致。");
+            var window=New(file);Require(window.Draft==profile&&!Field<Button>(window,"save").IsEnabled,"旧版迁移误标为未保存。");
+        });
+        Check("旧版无风格字段方案兼容，新版拒绝非法风格", () =>
+        {
+            var legacy = Path.Combine(run, "legacy.json"); File.WriteAllText(legacy, "{\"IconSize\":20}");
+            Require(ShellProfileFile.Import(legacy).Appearance == "win10" && ShellProfileFile.Load(legacy).Profile.IconSize == 20, "旧方案兼容失败。");
+            foreach (var json in new[] { "{\"Appearance\":\"unknown\"}", "{\"Appearance\":null}", "{\"Skin\":\"unknown\"}", "{\"Skin\":null}" })
+            {
+                File.WriteAllText(legacy, json);
+                Throws<InvalidDataException>(() => ShellProfileFile.Import(legacy));
+                Throws<InvalidDataException>(() => ShellProfileFile.Load(legacy));
+            }
+        });
+        Check("导出未保存草稿、导入后保存、恢复上一份均保持文件边界", () =>
+        {
+            var file = Path.Combine(run, "transfer.json"); var export = Path.Combine(run, "export.json"); var window = New(file);
+            window.ApplyPreset(2); window.ExportDraft(export, "missing");
+            Require(ShellProfileFile.Read(export) == window.Draft && !File.Exists(file) && Field<Button>(window, "save").IsEnabled, "导出改变保存状态。");
+            window.ApplyPreset(1); window.ImportDraft(export); Require(window.Draft == ShellPresets.All[2].Profile, "导入丢失参数。");
+            window.SaveDraft(); var first = Hash(file); window.ApplyPreset(1); window.SaveDraft(); var second = Hash(file);
+            window.SelectPage(4); Require(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-restore-previous").IsEnabled, "备份未启用恢复入口。");
+            window.RestorePreviousDraft(); Require(window.Draft == ShellPresets.All[2].Profile && Hash(file) == second && Hash(file + ".previous") == first, "恢复草稿提前改写文件。");
+            Throws<IOException>(() => window.ExportDraft(file, second)); Require(Hash(file) == second, "导出绕过当前方案保存入口。");
+            Throws<IOException>(() => window.ExportDraft(export, "missing"));
+        });
+        Check("拒绝损坏、重复、未知与非法导入，保留草稿和保存基线", () =>
+        {
+            var file = Path.Combine(run, "import-protection.json"); var window = New(file); window.ApplyPreset(2); var draft = window.Draft;
+            foreach (var json in new[] { "{}", "null", "[]", "{bad", "{\"IconSize\":17}", "{\"Unknown\":true}", "{\"IconSize\":20,\"IconSize\":32}", new string('x', 65537) })
+            {
+                var bad = Path.Combine(run, "bad-import.json"); File.WriteAllText(bad, json);
+                bool rejected = false; try { window.ImportDraft(bad); } catch { rejected = true; }
+                Require(rejected && window.Draft == draft && !File.Exists(file), "错误导入污染草稿或写盘。");
+            }
+        });
+        foreach (var size in new[] { (W: 1080, H: 820), (W: 740, H: 550) })
+        foreach (int route in new[] { 0, 1, 2, 3, 4, 5 })
+        Check($"新版页面 {route} · {size.W}×{size.H}", () =>
+        {
+            var window = New(Path.Combine(run, $"new-{route}-{size.W}.json")); window.ApplyPreset(2); window.SelectPage(route); Layout(window, size.W, size.H); Bounds(window, size.W, size.H);
+            Capture(window, size.W, size.H, $"新版-{route}-{size.W}x{size.H}.png");
+            if (route >= 3) Require(Field<ShellPreview>(window, "preview").Visibility == Visibility.Collapsed, "非设置页仍显示主预览。");
         });
         Check("窗口控制为矢量按钮且保留 Windows 调整边框；未创建 HWND", () =>
         {
@@ -347,7 +460,9 @@ internal static class FrontendChecks
     }
     static string ImageHash(FrameworkElement element)
     {
-        var bmp = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(element.ActualWidth)), Math.Max(1, (int)Math.Ceiling(element.ActualHeight)), 96, 96, PixelFormats.Pbgra32); bmp.Render(element);
+        var bmp = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(element.ActualWidth)), Math.Max(1, (int)Math.Ceiling(element.ActualHeight)), 96, 96, PixelFormats.Pbgra32);
+        // Normalize the element's parent offset so moving the preview never hashes an empty crop.
+        var drawing = new DrawingVisual(); using (var dc = drawing.RenderOpen()) dc.DrawRectangle(new VisualBrush(element), null, new Rect(0, 0, element.ActualWidth, element.ActualHeight)); bmp.Render(drawing);
         var bytes = new byte[bmp.PixelWidth * bmp.PixelHeight * 4]; bmp.CopyPixels(bytes, bmp.PixelWidth * 4, 0); return Convert.ToHexString(SHA256.HashData(bytes));
     }
     static void Capture(Window window, int width, int height, string name)
@@ -359,5 +474,3 @@ internal static class FrontendChecks
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var stream = File.Create(Path.Combine(Output, name)); encoder.Save(stream); Screenshots.Add(name);
     }
 }
-
-

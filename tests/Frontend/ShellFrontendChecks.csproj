@@ -18,5 +18,7 @@
     <Compile Include="../../src/ClassicDesk/ShellSettingsWindow.cs" Link="ShellSettingsWindow.cs" />
     <Page Include="../../src/ClassicDesk/ShellTheme.xaml" Link="ShellTheme.xaml" />
   </ItemGroup>
+  <ItemGroup><Resource Include="../../src/ClassicDesk/Assets/starlight-anime.png" Link="Assets/starlight-anime.png"/><Resource Include="../../src/ClassicDesk/Assets/skin-*.png" Link="Assets/%(Filename)%(Extension)"/></ItemGroup>
+  <ItemGroup><Resource Include="../../src/ClassicDesk/Assets/brand-starlight.png" Link="Assets/brand-starlight.png"/></ItemGroup>
 </Project>
 
