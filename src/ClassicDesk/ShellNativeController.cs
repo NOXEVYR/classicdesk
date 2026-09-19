@@ -79,7 +79,7 @@ public sealed class ShellNativeController : IShellNativeController
         }
         var preparation = host.Inspect(check.Package, profile);
         if (preparation.Guards.StartAllBack != ActivationPresence.Absent)
-            return new("现有桌面组件尚未退出", "检测到 StartAllBack，或无法完整核对其运行状态。请先在方便切换桌面时停用它，再回到这里检查。ClassicDesk 不会替你关闭它。");
+            return new("现有桌面组件尚未退出", "检测到 StartAllBack，或无法完整核对其运行状态。请先停用它，再回到这里检查。若已勾选停用但仍提示组件加载，请保存工作，按 StartAllBack 的提示注销并重新登录；仅重启资源管理器可能不足。ClassicDesk 不会自动关闭它或注销系统。");
         if (preparation.Guards.OtherWindhawk != ActivationPresence.Absent)
             return new("已有增强引擎正在运行", "检测到另一个 Windhawk 实例，当前不能并行启动。请先处理已有实例，再检查此方案。");
         var confirmation = coordinator.CaptureConfirmation(check.Package, profile);
