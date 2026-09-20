@@ -35,6 +35,7 @@ using winrt::Windows::UI::Core::CoreDispatcherPriority;
 namespace {
 constexpr UINT WorkMessage = WM_APP + 121;
 constexpr UINT_PTR SampleTimer = 1;
+constexpr UINT_PTR SettleTimer = 2;
 constexpr DWORD ClearColor = 0;
 constexpr DWORD LightColor = 0xFFF3F3F3;
 constexpr DWORD DarkColor = 0xFF202020;
@@ -131,23 +132,31 @@ void DiscoverRoot(void* instance) {
     if(stopping) return;
     try {
         { std::lock_guard lock(rootMutex); if(!roots.empty() && roots.front().element.get()) return; }
+        SetPropW(taskbar,L"ClassicDesk.Adaptive.RootStage",(HANDLE)1);
         winrt::Windows::Foundation::IUnknown unknown;
         winrt::copy_from_abi(unknown,(void**)instance+3);
         auto current=unknown.try_as<FrameworkElement>();
-        for(int depth=0;current && depth<32;depth++) {
-            if(winrt::get_class_name(current)==L"Taskbar.TaskbarFrame") {
-                bool found=false;
-                {
-                    std::lock_guard lock(rootMutex);
-                    for(auto& item:roots) if(item.element.get()==current) { found=true; break; }
-                    if(!found) roots.push_back({winrt::make_weak(current),current.RequestedTheme()});
-                }
-                if(!found) current.RequestedTheme(static_cast<ElementTheme>(desiredTheme.load()));
-                return;
+        if(!current) return;
+        SetPropW(taskbar,L"ClassicDesk.Adaptive.RootStage",(HANDLE)2);
+        auto xamlRoot=current.XamlRoot();
+        if(!xamlRoot) return;
+        auto content=xamlRoot.Content().try_as<FrameworkElement>();
+        if(!content) return;
+        std::vector<Root> discovered{{winrt::make_weak(content),content.RequestedTheme()}};
+        std::vector<winrt::Windows::UI::Xaml::DependencyObject> pending{content};
+        for(int visited=0;!pending.empty() && visited<1024;visited++) {
+            auto node=pending.back();pending.pop_back();
+            if(auto element=node.try_as<FrameworkElement>()) {
+                if(element!=content && winrt::get_class_name(element)==L"SystemTray.SystemTrayFrame")
+                    discovered.push_back({winrt::make_weak(element),element.RequestedTheme()});
             }
-            auto parent=Media::VisualTreeHelper::GetParent(current);
-            current=parent ? parent.try_as<FrameworkElement>() : nullptr;
+            int count=Media::VisualTreeHelper::GetChildrenCount(node);
+            for(int i=0;i<count;i++) pending.push_back(Media::VisualTreeHelper::GetChild(node,i));
         }
+        {std::lock_guard lock(rootMutex);roots=discovered;}
+        SetPropW(taskbar,L"ClassicDesk.Adaptive.RootStage",(HANDLE)3);
+        SetPropW(taskbar,L"ClassicDesk.Adaptive.RootCount",(HANDLE)(ULONG_PTR)discovered.size());
+        ApplyRoots(false);
     } catch(...) { }
 }
 void WINAPI VisualHook(void* instance) { visualUpdateOriginal(instance); DiscoverRoot(instance); }
@@ -162,7 +171,11 @@ void RefreshState() {
     MONITORINFO monitor{sizeof(monitor)};
     HMONITOR taskMonitor=MonitorFromWindow(taskbar,MONITOR_DEFAULTTONEAREST);
     if(!GetMonitorInfoW(taskMonitor,&monitor)) return;
-    bool maximized=IsZoomed(foreground) && !IsIconic(foreground) && IsWindowVisible(foreground) &&
+    RECT frame{};
+    bool hasFrame=SUCCEEDED(DwmGetWindowAttribute(foreground,9,&frame,sizeof(frame)));
+    bool fillsWorkArea=hasFrame && ClassicDeskAppearance::CoversWorkArea(frame.left,frame.top,frame.right,frame.bottom,
+        monitor.rcWork.left,monitor.rcWork.top,monitor.rcWork.right,monitor.rcWork.bottom);
+    bool maximized=(IsZoomed(foreground) || fillsWorkArea) && !IsDesktop(foreground) && !IsIconic(foreground) && IsWindowVisible(foreground) &&
         MonitorFromWindow(foreground,MONITOR_DEFAULTTONEAREST)==taskMonitor;
     DWORD cloaked=0;
     if(SUCCEEDED(DwmGetWindowAttribute(foreground,14,&cloaked,sizeof(cloaked))) && cloaked) maximized=false;
@@ -192,11 +205,12 @@ void RefreshState() {
 LRESULT CALLBACK EventWindowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
     if(message==WorkMessage) {
         workQueued=false;
-        SetTimer(window,SampleTimer,180,nullptr); // One-shot debounce, never an idle polling loop.
+        SetTimer(window,SampleTimer,180,nullptr);
+        SetTimer(window,SettleTimer,750,nullptr); // One final check after DWM paints the new window.
         return 0;
     }
-    if(message==WM_TIMER && w==SampleTimer) { KillTimer(window,SampleTimer); RefreshState(); return 0; }
-    if(message==WM_CLOSE) { KillTimer(window,SampleTimer); DestroyWindow(window); PostQuitMessage(0); return 0; }
+    if(message==WM_TIMER && (w==SampleTimer || w==SettleTimer)) { KillTimer(window,w); RefreshState(); return 0; }
+    if(message==WM_CLOSE) { KillTimer(window,SampleTimer); KillTimer(window,SettleTimer); DestroyWindow(window); PostQuitMessage(0); return 0; }
     return DefWindowProcW(window,message,w,l);
 }
 void CALLBACK WindowEvent(HWINEVENTHOOK,DWORD event,HWND window,LONG object,LONG,DWORD,DWORD) {
@@ -270,7 +284,7 @@ void Wh_ModBeforeUninit() {
 void Wh_ModUninit() {
     desiredColor=ClearColor; ApplyNative();
     if((DWORD)(ULONG_PTR)GetPropW(taskbar,L"ClassicDesk.Adaptive.Thread")==eventThreadId) {
-        for(auto name:{L"ClassicDesk.Adaptive.Thread",L"ClassicDesk.Adaptive.Mode",L"ClassicDesk.Adaptive.Samples",L"ClassicDesk.Adaptive.Events"}) RemovePropW(taskbar,name);
+        for(auto name:{L"ClassicDesk.Adaptive.Thread",L"ClassicDesk.Adaptive.Mode",L"ClassicDesk.Adaptive.Samples",L"ClassicDesk.Adaptive.Events",L"ClassicDesk.Adaptive.RootStage",L"ClassicDesk.Adaptive.RootCount"}) RemovePropW(taskbar,name);
     }
 }
 void Wh_ModSettingsChanged() { if(eventWindow) PostMessageW(eventWindow,WorkMessage,0,0); }

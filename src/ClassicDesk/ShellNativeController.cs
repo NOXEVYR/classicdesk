@@ -12,11 +12,13 @@ public sealed class ShellNativeController : IShellNativeController
     public const string LegacyRuntimeManifest = "87EBC2871F686E9E26DFF7CCDCC65CD181AC98DB80EAEC442B8D82720C3E139E";
     public const string StyleRuntimeManifest = "2EBD2A6D098D7F63535687212F352B29F32D6E67E2866E69E2A71F3E7B314007";
     public const string StaticRuntimeManifest = "A7F8F186C1F60946D26C0630C28DAC461EF36DC037906DFD3BBBC3038F0EAEFA";
-    public const string ReviewedRuntimeManifest = "A775D708F64B3832F7E23ECC700420DCB5C27C8C8EA3C0EEA3ECE6140AD10BE2";
+    public const string FirstAdaptiveRuntimeManifest = "A775D708F64B3832F7E23ECC700420DCB5C27C8C8EA3C0EEA3ECE6140AD10BE2";
+    public const string SecondAdaptiveRuntimeManifest = "758AF898CD72226F5CA266E49B06ABC8D641C6E2409737F04B636499E7D2BE34";
+    public const string ReviewedRuntimeManifest = "DFBBB14F0943C48B4971C3F31F0BA422F3C032CCB093ABADDA8319BADE2783D0";
     public static ActivationPackageCheck CheckReviewedPackage(string root)
     {
         var check = WindowsShellActivationHost.CheckPackage(root);
-        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest)
+        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest)
             throw new InvalidDataException("运行资产清单不是已核对的版本。");
         return check;
     }

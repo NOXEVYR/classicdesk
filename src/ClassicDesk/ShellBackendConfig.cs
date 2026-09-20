@@ -38,10 +38,12 @@ public static class ShellTaskbarStyle
             Style("SystemTray.ChevronIconView", "Padding=0", "MinWidth=20");
             // Let the content measure itself: a fixed outer width clips the
             // image's own padded grid, and can truncate language indicators.
-            Style("SystemTray.NotifyIconView#NotifyItemIcon", "Padding=0", "MinWidth=20", "Width=Auto");
+            Style("SystemTray.NotifyIconView#NotifyItemIcon", "Padding=2,0,2,0", "MinWidth=24", "Width=Auto");
             Style("SystemTray.NotifyIconView#NotifyItemIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.ImageIconContent > Grid#ContainerGrid", "Padding=0");
             Style("SystemTray.NotifyIconView#NotifyItemIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=0");
-            Style("SystemTray.LanguageTextIconContent", "Width=Auto", "MinWidth=20");
+            Style("SystemTray.LanguageTextIconContent", "Width=Auto", "MinWidth=24");
+            Style("SystemTray.LanguageImageIconContent", "Width=24", "MinWidth=24");
+            Style("SystemTray.LanguageImageIconContent > Grid#ContainerGrid", "Padding=0", "Margin=0");
             Style("SystemTray.LanguageTextIconContent > Grid#ContainerGrid", "Width=Auto", "MinWidth=0", "Padding=0", "Margin=0");
             Style("SystemTray.ImageIconContent > Grid#ContainerGrid", "Padding=0", "Margin=0");
             Style("SystemTray.IconView#SystemTrayIcon", "Padding=0", "MinWidth=20");

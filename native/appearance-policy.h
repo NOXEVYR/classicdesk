@@ -10,6 +10,10 @@ inline int Median(std::array<int,9> samples,int count) {
     std::sort(samples.begin(),samples.begin()+count);
     return samples[count/2];
 }
+inline bool CoversWorkArea(long left,long top,long right,long bottom,long workLeft,long workTop,long workRight,long workBottom) {
+    constexpr long tolerance=2;
+    return left<=workLeft+tolerance && top<=workTop+tolerance && right>=workRight-tolerance && bottom>=workBottom-tolerance;
+}
 inline bool Dark(int brightness,bool previous) {
     if(brightness>=0 && brightness<110) return true;
     if(brightness>150) return false;

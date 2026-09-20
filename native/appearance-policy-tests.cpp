@@ -2,6 +2,10 @@
 #include <cassert>
 int main() {
     using namespace ClassicDeskAppearance;
+    assert(CoversWorkArea(0,0,2560,1368,0,0,2560,1368));
+    assert(CoversWorkArea(1,1,2559,1367,0,0,2560,1368));
+    assert(!CoversWorkArea(40,40,2200,1200,0,0,2560,1368));
+    assert(!CoversWorkArea(2560,0,5120,1368,0,0,2560,1368));
     assert(Luminance(0,0,0)==0 && Luminance(255,255,255)==255);
     assert(Luminance(243,243,243)>150 && Luminance(32,32,32)<110);
     assert(Median({255,255,255,255,255,0,0,0,0},9)==255);
