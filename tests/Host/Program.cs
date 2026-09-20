@@ -160,13 +160,36 @@ Test("native background ninth target apply resume restore " + translucent, f => 
  f.AddStyle();f.AddBackdrop();f.Profile=f.Profile with {TranslucentTaskbar=translucent,CompactTray=true};
  var capture=f.Capture();Assert(capture.Preparation.Changes.Length==9);
  var text=Encoding.Unicode.GetString(Convert.FromBase64String(capture.Preparation.Changes.Single(c=>c.Target==ActivationTarget.TaskbarBackdropMod).DesiredData));
- Assert(text.Contains("Disabled="+(translucent?"0":"1"))&&text.Contains("onlyWhenMaximized=0")&&text.Contains("color.transparency=24"));
+ Assert(text.Contains("Disabled="+(translucent?"0":"1"))&&text.Contains("onlyWhenMaximized=0")&&text.Contains("color.transparency=0"));
  var result=f.Core.Activate(capture);Assert(result.State==ShellActivationState.Active);f.Process.Running=false;
  Assert(f.Core.Resume(f.Core.CaptureResumeConfirmation(result.JournalId)).State==ShellActivationState.Active);
  Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(result.JournalId)).State==ShellActivationState.Restored);
  Assert(!File.Exists(Path.Combine(f.PackageRoot,"AppData/Engine/Mods/taskbar-background-helper.ini")));
 });
 Test("native background without style asset is rejected", f=>{f.AddBackdrop();Reject(()=>f.Check());});
+Test("adaptive missing asset rejects before writes", f => {
+ f.AddStyle();f.AddBackdrop();f.Profile=f.Profile with {TranslucentTaskbar=true,FollowMaximizedTheme=true};
+ Reject(()=>f.Capture());Assert(f.Registry.Writes==0&&f.Process.Starts==0&&!Directory.Exists(f.Logs));
+});
+Test("adaptive requires static fallback", f => {f.AddStyle();f.AddAdaptive();Reject(()=>f.Check());});
+Test("adaptive apply resume restore shares ninth target and preserves binaries", f => {
+ f.AddStyle();f.AddBackdrop();f.AddAdaptive();f.Profile=f.Profile with {TranslucentTaskbar=true,FollowMaximizedTheme=true,CompactTray=true};
+ var original=f.Originals();var capture=f.Capture();Assert(capture.Preparation.Changes.Length==9);
+ var text=Encoding.Unicode.GetString(Convert.FromBase64String(capture.Preparation.Changes.Single(c=>c.Target==ActivationTarget.TaskbarBackdropMod).DesiredData));
+ Assert(text.Contains("LibraryFileName=taskbar-background-helper_1.2-classicdesk.1.dll")&&text.Contains("followMaximizedWindow=1")&&!text.Contains("onlyWhenMaximized"));
+ var active=f.Core.Activate(capture);Assert(active.State==ShellActivationState.Active);f.Process.Running=false;
+ Assert(f.Core.Resume(f.Core.CaptureResumeConfirmation(active.JournalId)).State==ShellActivationState.Active);
+ Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(active.JournalId)).State==ShellActivationState.Restored);
+ Assert(original.All(p=>File.ReadAllBytes(p.Key).SequenceEqual(p.Value)));
+ Assert(!File.Exists(Path.Combine(f.PackageRoot,"AppData/Engine/Mods/taskbar-background-helper.ini"))&&f.Check().VerifiedAssets==20);
+});
+Test("adaptive optional serialization and feature dependency", f => {
+ Assert(!JsonSerializer.Serialize(new ShellProfile()).Contains("FollowMaximizedTheme"));
+ Reject(()=>new ShellProfile(FollowMaximizedTheme:true).Validate());
+ var draft=new ShellProfile(TranslucentTaskbar:true,FollowMaximizedTheme:true);draft.Validate();
+ Assert(JsonSerializer.Deserialize<ShellProfile>(JsonSerializer.Serialize(draft))==draft);
+ var scoped=new ShellFeatureSelection(false).Apply(draft);Assert(!scoped.FollowMaximizedTheme&&!scoped.TranslucentTaskbar);
+});
 var failures=checks.Count(x=>!(bool)x.GetType().GetProperty("passed")!.GetValue(x)!);
 var source=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../src/ClassicDesk/ShellActivationHost.cs"));
 var report=new { passed=checks.Count-failures,failed=failures,filter=args.Length>1?args[1]:null,realRegistryWrites=0,realProcessStarts=0,realProcessStops=0,realWindowInteractions=0,testMode="real isolated package files; injected fake registry/environment/process only",sourceSha256=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))),checks };
@@ -181,6 +204,10 @@ sealed class Fixture {
  public void AddBackdrop() {
     var path=Path.Combine(PackageRoot,WindowsShellActivationHost.BackdropAsset); var bytes=Encoding.UTF8.GetBytes("NON-EXECUTABLE-BACKDROP-FIXTURE"); File.WriteAllBytes(path,bytes);
     ChangeManifest(doc=>doc["assets"]!.AsArray().Add(System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new{path=WindowsShellActivationHost.BackdropAsset,bytes=bytes.Length,sha256=Convert.ToHexString(SHA256.HashData(bytes))}))));
+ }
+ public void AddAdaptive() {
+    var path=Path.Combine(PackageRoot,WindowsShellActivationHost.AdaptiveBackdropAsset);var bytes=Encoding.UTF8.GetBytes("NON-EXECUTABLE-ADAPTIVE-FIXTURE");File.WriteAllBytes(path,bytes);
+    ChangeManifest(doc=>doc["assets"]!.AsArray().Add(System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new{path=WindowsShellActivationHost.AdaptiveBackdropAsset,bytes=bytes.Length,sha256=Convert.ToHexString(SHA256.HashData(bytes))}))));
  }
  public ActivationPackageCheck Check()=>WindowsShellActivationHost.CheckPackage(PackageRoot);
  public ActivationConfirmation Capture()=>Core.CaptureConfirmation(Check().Package,Profile);

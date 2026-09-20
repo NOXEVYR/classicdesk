@@ -10,7 +10,8 @@ namespace ClassicDesk;
 
 public static class ShellTaskbarStyle
 {
-    public static Dictionary<string, string> BackdropSettings() => new()
+    public static Dictionary<string, string> BackdropSettings(bool followMaximized = false) => followMaximized
+        ? new() { ["followMaximizedWindow"] = "1" } : new()
     {
         ["backgroundStyle"] = "color", ["color.red"] = "0", ["color.green"] = "0", ["color.blue"] = "0",
         ["color.accentColor"] = "0", ["color.transparency"] = "0", ["onlyWhenMaximized"] = "0", ["styleForDarkMode.use"] = "0"
@@ -41,6 +42,8 @@ public static class ShellTaskbarStyle
             Style("SystemTray.NotifyIconView#NotifyItemIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.ImageIconContent > Grid#ContainerGrid", "Padding=0");
             Style("SystemTray.NotifyIconView#NotifyItemIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=0");
             Style("SystemTray.LanguageTextIconContent", "Width=Auto", "MinWidth=20");
+            Style("SystemTray.LanguageTextIconContent > Grid#ContainerGrid", "Width=Auto", "MinWidth=0", "Padding=0", "Margin=0");
+            Style("SystemTray.ImageIconContent > Grid#ContainerGrid", "Padding=0", "Margin=0");
             Style("SystemTray.IconView#SystemTrayIcon", "Padding=0", "MinWidth=20");
             Style("SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=2,0,2,0");
             Style("SystemTray.OmniButton", "Padding=0");
@@ -110,7 +113,7 @@ public static class ShellBackendConfig
             library.Contains("..", StringComparison.Ordinal))
             throw new InvalidDataException("模块库必须是受限 DLL 文件名，不能包含路径、空白或控制字符。");
         var settings = plan.Settings.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
-        ValidateSettings(plan.Id, settings);
+        ValidateSettings(plan.Id, plan.Version, settings);
         var stamp = (now ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds() & 0x7fffffff;
         var text = new StringBuilder();
         void Line(string value) => text.Append(value).Append("\r\n");
@@ -195,14 +198,15 @@ public static class ShellBackendConfig
     static void ValidateIdentity(ShellModPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        if (!Supported.TryGetValue(plan.Id, out var expected) || plan.Version != expected.Version)
+        if (!Supported.TryGetValue(plan.Id, out var expected) || (plan.Version != expected.Version &&
+            !(plan.Id == "taskbar-background-helper" && plan.Version == "1.2-classicdesk.1")))
             throw new InvalidDataException("只接受已核对的固定版本模块，不能生成任意模块配置。");
         if (plan.Targets.Count != expected.Targets.Length ||
             !plan.Targets.ToHashSet(StringComparer.Ordinal).SetEquals(expected.Targets))
             throw new InvalidDataException("模块进程范围与固定源码不一致。");
     }
 
-    static void ValidateSettings(string id, Dictionary<string, string> values)
+    static void ValidateSettings(string id, string version, Dictionary<string, string> values)
     {
         if (id == "windows-11-taskbar-styler")
         {
@@ -215,6 +219,10 @@ public static class ShellBackendConfig
         }
         if (id == "taskbar-background-helper")
         {
+            if(version == "1.2-classicdesk.1") {
+                if(values.Count == 1 && values.TryGetValue("followMaximizedWindow", out var follow) && follow == "1") return;
+                throw new InvalidDataException("窗口明暗组件只接受已核对的事件驱动跟随配置。");
+            }
             var expected = ShellTaskbarStyle.BackdropSettings();
             if (values.Count != expected.Count || expected.Any(p => !values.TryGetValue(p.Key, out var value) || value != p.Value))
                 throw new InvalidDataException("原生背景只接受已核对的静态半透明配置。");

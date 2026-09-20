@@ -1,0 +1,276 @@
+// ==WindhawkMod==
+// @id              taskbar-background-helper
+// @name            ClassicDesk adaptive taskbar background
+// @description     ClassicDesk fork: clear desktop, light/dark maximized window, event-driven.
+// @version         1.2-classicdesk.1
+// @author          ClassicDesk contributors
+// @include         explorer.exe
+// @architecture    x86-64
+// @compilerOptions -ldwmapi -lgdi32 -lole32 -loleaut32 -lruntimeobject
+// @license         GPL-3.0
+// ==/WindhawkMod==
+// SPDX-License-Identifier: GPL-3.0-or-later
+// The accent policy follows m417z's Taskbar Background Helper 1.2.
+// Native-to-XAML root discovery follows r1file's Dynamic Taskbar Transparency
+// 0.3.9 (GPL-3.0), pinned upstream revision:
+// f3ec3675168600d1decfcda97d2a12e375903ae9.
+// This is a locally built ClassicDesk fork, not the upstream precompiled DLL.
+
+#include <windhawk_utils.h>
+#include <dwmapi.h>
+#undef GetCurrentTime
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <mutex>
+#include <vector>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Core.h>
+#include <winrt/Windows.UI.Xaml.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
+#include "appearance-policy.h"
+
+using namespace winrt::Windows::UI::Xaml;
+using winrt::Windows::UI::Core::CoreDispatcherPriority;
+namespace {
+constexpr UINT WorkMessage = WM_APP + 121;
+constexpr UINT_PTR SampleTimer = 1;
+constexpr DWORD ClearColor = 0;
+constexpr DWORD LightColor = 0xFFF3F3F3;
+constexpr DWORD DarkColor = 0xFF202020;
+struct AccentPolicy { int state; UINT flags; DWORD color; int animation; };
+struct CompositionData { int attribute; void* data; SIZE_T size; };
+using SetComposition = BOOL(WINAPI*)(HWND, CompositionData*);
+SetComposition setCompositionOriginal;
+HWND taskbar;
+std::atomic<HWND> eventWindow{nullptr};
+HANDLE eventThread;
+DWORD eventThreadId;
+std::atomic<bool> stopping{false}, workQueued{false};
+std::atomic<DWORD> desiredColor{ClearColor};
+std::atomic<int> desiredTheme{0};
+std::atomic<ULONGLONG> eventCount{0}, sampleCount{0}, applyCount{0};
+std::mutex rootMutex;
+struct Root { winrt::weak_ref<FrameworkElement> element; ElementTheme original; };
+std::vector<Root> roots;
+using VisualUpdate = void(WINAPI*)(void*);
+VisualUpdate visualUpdateOriginal;
+VisualUpdate paddingUpdateOriginal;
+
+bool IsShellSurface(HWND window) {
+    wchar_t name[128]{};
+    GetClassNameW(window, name, ARRAYSIZE(name));
+    if(!_wcsicmp(name,L"Windows.UI.Core.CoreWindow")) {
+        DWORD id=0; GetWindowThreadProcessId(window,&id);
+        HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,id);
+        wchar_t path[1024]{}; DWORD length=ARRAYSIZE(path);
+        bool shell=false;
+        if(process) {
+            if(QueryFullProcessImageNameW(process,0,path,&length)) {
+                const wchar_t* base=wcsrchr(path,L'\\'); base=base?base+1:path;
+                shell=!_wcsicmp(base,L"StartMenuExperienceHost.exe") ||
+                    !_wcsicmp(base,L"ShellExperienceHost.exe") || !_wcsicmp(base,L"SearchHost.exe");
+            }
+            CloseHandle(process);
+        }
+        return shell;
+    }
+    return !_wcsicmp(name,L"Shell_TrayWnd") || !_wcsicmp(name,L"Shell_SecondaryTrayWnd") ||
+        !_wcsicmp(name,L"XamlExplorerHostIslandWindow") ||
+        !_wcsicmp(name,L"TopLevelWindowForOverflowXamlIsland");
+}
+bool IsDesktop(HWND window) {
+    wchar_t name[128]{};
+    GetClassNameW(window,name,ARRAYSIZE(name));
+    return !_wcsicmp(name,L"Progman") || !_wcsicmp(name,L"WorkerW");
+}
+// Nine local pixels are read only after a relevant event. No screen image,
+// window title, browsing content, or colour samples are retained or logged.
+int SampleBrightness(HWND window, const RECT& area, bool desktop) {
+    HDC dc=GetDC(nullptr); if(!dc) return -1;
+    std::array<int,9> values{}; int count=0;
+    int y=area.bottom-6;
+    for(int i=0;i<9;i++) {
+        POINT p{area.left+(area.right-area.left)*(i+1)/10,y};
+        HWND hit=GetAncestor(WindowFromPoint(p),GA_ROOT);
+        if(!hit || (desktop ? !IsDesktop(hit) : hit!=window)) continue;
+        COLORREF color=GetPixel(dc,p.x,p.y);
+        if(color==CLR_INVALID) continue;
+        values[count++]=ClassicDeskAppearance::Luminance(GetRValue(color),GetGValue(color),GetBValue(color));
+    }
+    ReleaseDC(nullptr,dc);
+    ++sampleCount;
+    return ClassicDeskAppearance::Median(values,count);
+}
+void ApplyNative() {
+    if(!taskbar || !IsWindow(taskbar) || !setCompositionOriginal) return;
+    AccentPolicy policy{2,0x13,desiredColor.load(),0};
+    CompositionData data{19,&policy,sizeof(policy)};
+    setCompositionOriginal(taskbar,&data);
+}
+void ApplyRoots(bool restore) {
+    std::vector<Root> snapshot;
+    { std::lock_guard lock(rootMutex); snapshot=roots; }
+    for(auto& item:snapshot) {
+        try {
+            auto root=item.element.get(); if(!root) continue;
+            auto dispatcher=root.Dispatcher(); if(!dispatcher) continue;
+            auto theme=restore ? item.original : static_cast<ElementTheme>(desiredTheme.load());
+            auto apply=[weak=item.element,theme,restore]() {
+                if(auto value=weak.get()) {
+                    if(!restore || value.RequestedTheme()==static_cast<ElementTheme>(desiredTheme.load())) value.RequestedTheme(theme);
+                }
+            };
+            if(dispatcher.HasThreadAccess()) apply();
+            else dispatcher.RunAsync(CoreDispatcherPriority::Normal,apply).get();
+            // All dispatched work is awaited. Unload never leaves a DLL callback queued.
+        } catch(...) { }
+    }
+}
+void DiscoverRoot(void* instance) {
+    if(stopping) return;
+    try {
+        { std::lock_guard lock(rootMutex); if(!roots.empty() && roots.front().element.get()) return; }
+        winrt::Windows::Foundation::IUnknown unknown;
+        winrt::copy_from_abi(unknown,(void**)instance+3);
+        auto current=unknown.try_as<FrameworkElement>();
+        for(int depth=0;current && depth<32;depth++) {
+            if(winrt::get_class_name(current)==L"Taskbar.TaskbarFrame") {
+                bool found=false;
+                {
+                    std::lock_guard lock(rootMutex);
+                    for(auto& item:roots) if(item.element.get()==current) { found=true; break; }
+                    if(!found) roots.push_back({winrt::make_weak(current),current.RequestedTheme()});
+                }
+                if(!found) current.RequestedTheme(static_cast<ElementTheme>(desiredTheme.load()));
+                return;
+            }
+            auto parent=Media::VisualTreeHelper::GetParent(current);
+            current=parent ? parent.try_as<FrameworkElement>() : nullptr;
+        }
+    } catch(...) { }
+}
+void WINAPI VisualHook(void* instance) { visualUpdateOriginal(instance); DiscoverRoot(instance); }
+void WINAPI PaddingHook(void* instance) { paddingUpdateOriginal(instance); DiscoverRoot(instance); }
+void RefreshState() {
+    if(stopping || !IsWindow(taskbar)) return;
+    HWND foreground=GetForegroundWindow(); if(!foreground) return;
+    // Keep the last mode while the user opens a taskbar/start/flyout surface.
+    if(IsShellSurface(foreground)) return;
+    HWND owner=GetAncestor(foreground,GA_ROOTOWNER);
+    if(owner && IsZoomed(owner)) foreground=owner;
+    MONITORINFO monitor{sizeof(monitor)};
+    HMONITOR taskMonitor=MonitorFromWindow(taskbar,MONITOR_DEFAULTTONEAREST);
+    if(!GetMonitorInfoW(taskMonitor,&monitor)) return;
+    bool maximized=IsZoomed(foreground) && !IsIconic(foreground) && IsWindowVisible(foreground) &&
+        MonitorFromWindow(foreground,MONITOR_DEFAULTTONEAREST)==taskMonitor;
+    DWORD cloaked=0;
+    if(SUCCEEDED(DwmGetWindowAttribute(foreground,14,&cloaked,sizeof(cloaked))) && cloaked) maximized=false;
+    RECT area=monitor.rcWork;
+    int brightness=-1;
+    if(maximized) brightness=SampleBrightness(foreground,area,false);
+    else if(IsDesktop(foreground)) brightness=SampleBrightness(foreground,area,true);
+    bool dark=desiredTheme.load()==2;
+    if(brightness>=0) {
+        // Hysteresis avoids flicker around medium-grey page backgrounds.
+        dark=ClassicDeskAppearance::Dark(brightness,dark);
+    } else if(maximized) {
+        BOOL nativeDark=FALSE;
+        if(SUCCEEDED(DwmGetWindowAttribute(foreground,20,&nativeDark,sizeof(nativeDark)))) dark=nativeDark!=FALSE;
+        else return; // Preserve a known colour if neither source is available.
+    }
+    DWORD color=maximized ? (dark?DarkColor:LightColor) : ClearColor;
+    int theme=dark?2:1;
+    if(desiredColor.exchange(color)!=color || desiredTheme.load()!=theme) {
+        desiredTheme=theme; ApplyNative(); ApplyRoots(false); ++applyCount;
+    }
+    SetPropW(taskbar,L"ClassicDesk.Adaptive.Thread",(HANDLE)(ULONG_PTR)GetCurrentThreadId());
+    SetPropW(taskbar,L"ClassicDesk.Adaptive.Mode",(HANDLE)(ULONG_PTR)(maximized?(dark?3:2):1));
+    SetPropW(taskbar,L"ClassicDesk.Adaptive.Samples",(HANDLE)(ULONG_PTR)sampleCount.load());
+    SetPropW(taskbar,L"ClassicDesk.Adaptive.Events",(HANDLE)(ULONG_PTR)eventCount.load());
+}
+LRESULT CALLBACK EventWindowProc(HWND window,UINT message,WPARAM w,LPARAM l) {
+    if(message==WorkMessage) {
+        workQueued=false;
+        SetTimer(window,SampleTimer,180,nullptr); // One-shot debounce, never an idle polling loop.
+        return 0;
+    }
+    if(message==WM_TIMER && w==SampleTimer) { KillTimer(window,SampleTimer); RefreshState(); return 0; }
+    if(message==WM_CLOSE) { KillTimer(window,SampleTimer); DestroyWindow(window); PostQuitMessage(0); return 0; }
+    return DefWindowProcW(window,message,w,l);
+}
+void CALLBACK WindowEvent(HWINEVENTHOOK,DWORD event,HWND window,LONG object,LONG,DWORD,DWORD) {
+    if(stopping || !eventWindow || !window) return;
+    if(event!=EVENT_SYSTEM_FOREGROUND && event!=EVENT_SYSTEM_MINIMIZESTART && event!=EVENT_SYSTEM_MINIMIZEEND && object!=OBJID_WINDOW) return;
+    HWND foreground=GetForegroundWindow();
+    if(event!=EVENT_SYSTEM_FOREGROUND && window!=foreground && !IsDesktop(window)) return;
+    ++eventCount;
+    if(!workQueued.exchange(true)) PostMessageW(eventWindow,WorkMessage,0,0);
+}
+DWORD WINAPI EventThread(void*) {
+    SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+    WNDCLASSW wc{}; wc.lpfnWndProc=EventWindowProc; wc.hInstance=GetModuleHandleW(nullptr); wc.lpszClassName=L"ClassicDesk.AdaptiveTaskbar.Events.v1";
+    if(!RegisterClassW(&wc)) { winrt::uninit_apartment(); return 1; }
+    eventWindow=CreateWindowExW(0,wc.lpszClassName,L"",0,0,0,0,0,HWND_MESSAGE,nullptr,wc.hInstance,nullptr);
+    if(!eventWindow) { UnregisterClassW(wc.lpszClassName,wc.hInstance); winrt::uninit_apartment(); return 1; }
+    std::vector<HWINEVENTHOOK> hooks;
+    for(DWORD event:{EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_MINIMIZESTART,EVENT_SYSTEM_MINIMIZEEND,EVENT_OBJECT_LOCATIONCHANGE,EVENT_OBJECT_NAMECHANGE,EVENT_OBJECT_SHOW,EVENT_OBJECT_HIDE}) {
+        auto hook=SetWinEventHook(event,event,nullptr,WindowEvent,0,0,WINEVENT_OUTOFCONTEXT);
+        if(hook) hooks.push_back(hook);
+    }
+    PostMessageW(eventWindow,WorkMessage,0,0);
+    MSG message{};
+    while(GetMessageW(&message,nullptr,0,0)>0) { TranslateMessage(&message); DispatchMessageW(&message); }
+    for(auto hook:hooks) UnhookWinEvent(hook);
+    eventWindow=nullptr; UnregisterClassW(wc.lpszClassName,wc.hInstance);
+    winrt::uninit_apartment(); return 0;
+}
+BOOL WINAPI CompositionHook(HWND window,CompositionData* data) {
+    if(!stopping && window==taskbar && data && data->attribute==19) {
+        AccentPolicy policy{2,0x13,desiredColor.load(),0};
+        CompositionData replacement{19,&policy,sizeof(policy)};
+        return setCompositionOriginal(window,&replacement);
+    }
+    return setCompositionOriginal(window,data);
+}
+}
+BOOL Wh_ModInit() {
+    taskbar=FindWindowW(L"Shell_TrayWnd",nullptr); DWORD process=0;
+    GetWindowThreadProcessId(taskbar,&process);
+    if(!taskbar || process!=GetCurrentProcessId()) return FALSE;
+    if(!Wh_GetIntSetting(L"followMaximizedWindow")) return FALSE;
+    auto module=GetModuleHandleW(L"Taskbar.View.dll");
+    if(!module) module=GetModuleHandleW(L"ExplorerExtensions.dll");
+    if(!module) return FALSE;
+    WindhawkUtils::SYMBOL_HOOK hooks[]={
+        {{LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},&visualUpdateOriginal,VisualHook},
+        {{LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))"},&paddingUpdateOriginal,PaddingHook}
+    };
+    if(!WindhawkUtils::HookSymbols(module,hooks,ARRAYSIZE(hooks))) return FALSE;
+    auto address=(SetComposition)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetWindowCompositionAttribute");
+    if(!address || !WindhawkUtils::SetFunctionHook(address,CompositionHook,&setCompositionOriginal)) return FALSE;
+    return TRUE;
+}
+void Wh_ModAfterInit() {
+    ApplyNative(); eventThread=CreateThread(nullptr,0,EventThread,nullptr,0,&eventThreadId);
+}
+void Wh_ModBeforeUninit() {
+    stopping=true;
+    if(eventThread) {
+        // Ensure the message queue exists even if unload follows startup immediately.
+        for(int i=0;i<100 && !eventWindow;i++) { if(WaitForSingleObject(eventThread,10)==WAIT_OBJECT_0) break; }
+        if(eventWindow) PostMessageW(eventWindow,WM_CLOSE,0,0);
+        else PostThreadMessageW(eventThreadId,WM_QUIT,0,0);
+        WaitForSingleObject(eventThread,INFINITE); CloseHandle(eventThread); eventThread=nullptr;
+    }
+    ApplyRoots(true);
+    { std::lock_guard lock(rootMutex); roots.clear(); }
+}
+void Wh_ModUninit() {
+    desiredColor=ClearColor; ApplyNative();
+    if((DWORD)(ULONG_PTR)GetPropW(taskbar,L"ClassicDesk.Adaptive.Thread")==eventThreadId) {
+        for(auto name:{L"ClassicDesk.Adaptive.Thread",L"ClassicDesk.Adaptive.Mode",L"ClassicDesk.Adaptive.Samples",L"ClassicDesk.Adaptive.Events"}) RemovePropW(taskbar,name);
+    }
+}
+void Wh_ModSettingsChanged() { if(eventWindow) PostMessageW(eventWindow,WorkMessage,0,0); }

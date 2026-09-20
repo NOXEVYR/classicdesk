@@ -79,7 +79,7 @@ public static class ShellBackendPlanner
         foreach (var step in plan.Steps) text.AppendLine("• " + step);
         text.AppendLine();
         text.AppendLine("前端可关闭；实际效果需要 Windhawk 引擎/便携守护进程继续运行。关闭引擎会结束挂钩会话，不能承诺所有后台组件都退出后效果仍永久保留。");
-        text.AppendLine("优先核对官方预编译模块，不要求用户安装编译器。只有修改源码或没有匹配模块时，才考虑 55,975,130 字节（53.38 MiB）开发编译器；该下载尚未获准。预编译终端包仍需固定 hash、检查运行库与实际兼容性。");
+        text.AppendLine("优先核对官方预编译模块，不要求用户安装编译器。自适应背景使用 ClassicDesk 本地构建组件，编译器仅用于开发，不随应用分发。所有终端组件仍需固定 hash、检查运行库与实际兼容性。");
         text.AppendLine("经典 Ribbon 模式不带标签页；关闭方案选项只表示不启用对应模块，不会擅自关闭其他工具的设置。");
         return text.ToString();
     }
@@ -95,8 +95,9 @@ public static class ShellBackendPlanner
         ShellModPlan Mod(string id, string version, string license, bool selected, string[] targets,
             Dictionary<string, string> settings) => new(id, version, license, selected,
                 selected ? "拟启用，尚未执行" : "本方案不启用；若此前由本工具拥有，需另作归属恢复计划",
-                targets, settings, ModsSource + id + ".wh.cpp", "planned; precompiled-and-live-compatibility-unknown",
-                $"https://mods.windhawk.net/mods/{id}/{version}_64.dll");
+                targets, settings, version.Contains("classicdesk") ? "native/taskbar-background-helper.wh.cpp（ClassicDesk 本地源码）" : ModsSource + id + ".wh.cpp",
+                version.Contains("classicdesk") ? "local-source-build; requires-reviewed-runtime" : "planned; precompiled-and-live-compatibility-unknown",
+                version.Contains("classicdesk") ? "" : $"https://mods.windhawk.net/mods/{id}/{version}_64.dll");
         var modules = new[]
         {
             Mod("taskbar-start-button-position", "1.3.2", "GPL-3.0", !profile.SkipTaskbarLayout && profile.StartOnLeft,
@@ -111,7 +112,7 @@ public static class ShellBackendPlanner
                 Settings(("overrideWithCtrl", profile.ClassicMenuWithCtrl ? "1" : "0"))),
             Mod("windows-11-taskbar-styler", "1.9", "GPL-3.0", profile.CompactTray || profile.TranslucentTaskbar, ["explorer.exe"],
                 ShellTaskbarStyle.Settings(profile.CompactTray, profile.TranslucentTaskbar)),
-            Mod("taskbar-background-helper", "1.2", "GPL-3.0", profile.TranslucentTaskbar, ["explorer.exe"], ShellTaskbarStyle.BackdropSettings())
+            Mod("taskbar-background-helper", profile.FollowMaximizedTheme ? "1.2-classicdesk.1" : "1.2", "GPL-3.0", profile.TranslucentTaskbar, ["explorer.exe"], ShellTaskbarStyle.BackdropSettings(profile.FollowMaximizedTheme))
         };
         var blockers = new List<string>();
         if (environment.Build is null) blockers.Add("Windows 构建号未能读取，不能推断兼容性。");

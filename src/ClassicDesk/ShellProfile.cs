@@ -14,7 +14,8 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool SkipTaskbarLayout = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool SkipTaskbarSizing = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool CompactTray = false,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool TranslucentTaskbar = false)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool TranslucentTaskbar = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool FollowMaximizedTheme = false)
 {
     public static readonly int[] IconSizes = [16, 20, 24, 28, 32];
     public static readonly int[] TaskbarHeights = [40, 44, 48, 52, 56, 64];
@@ -31,6 +32,8 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
             throw new InvalidDataException("方案中的任务栏尺寸超出可选范围。");
         if (ClassicRibbon && UseClassicNavigationBar)
             throw new InvalidDataException("资源管理器不能同时选择两种工具栏样式。");
+        if (FollowMaximizedTheme && !TranslucentTaskbar)
+            throw new InvalidDataException("窗口明暗跟随需要启用透明任务栏。");
     }
     [JsonIgnore] public ShellPreviewOptions PreviewOptions => new(ClassicRibbon, StartOnLeft, IconSize, TaskbarHeight,
         ClassicContextMenu, TaskbarButtonWidth: TaskbarButtonWidth, SmallIconSize: SmallIconSize,
@@ -43,7 +46,7 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
 public sealed record ShellFeatureSelection(bool Layout = true, bool Sizing = true, bool Explorer = false, bool ContextMenu = false)
 {
     public ShellProfile Apply(ShellProfile draft) => draft with {
-        SkipTaskbarLayout = !Layout, SkipTaskbarSizing = !Sizing, CompactTray = Layout && draft.CompactTray, TranslucentTaskbar = Layout && draft.TranslucentTaskbar,
+        SkipTaskbarLayout = !Layout, SkipTaskbarSizing = !Sizing, CompactTray = Layout && draft.CompactTray, TranslucentTaskbar = Layout && draft.TranslucentTaskbar, FollowMaximizedTheme = Layout && draft.FollowMaximizedTheme,
         ClassicRibbon = Explorer && draft.ClassicRibbon,
         UseClassicNavigationBar = Explorer && draft.UseClassicNavigationBar,
         ClassicContextMenu = ContextMenu && draft.ClassicContextMenu
@@ -65,8 +68,8 @@ public static class ShellPresets
     public static string DisplayName(ShellProfile profile) => All[Index(profile)].Name;
     public static IReadOnlyList<string> Changes(ShellProfile before, ShellProfile after)
     {
-        var names = new[] { "开始按钮位置", "图标大小", "任务栏高度", "功能区", "完整右键菜单", "按钮宽度", "小图标尺寸", "小按钮宽度", "系统按钮位置", "开始菜单位置", "搜索菜单位置", "Ctrl 菜单切换", "经典导航栏", "布局方案", "界面皮肤", "任务栏布局增强", "任务栏尺寸增强", "紧凑系统托盘", "透明任务栏" };
-        var properties = new[] { "StartOnLeft", "IconSize", "TaskbarHeight", "ClassicRibbon", "ClassicContextMenu", "TaskbarButtonWidth", "SmallIconSize", "SmallTaskbarButtonWidth", "OtherSystemButtonsOnLeft", "StartMenuOnLeft", "SearchMenuOnLeft", "ClassicMenuWithCtrl", "UseClassicNavigationBar", "Appearance", "Skin", "SkipTaskbarLayout", "SkipTaskbarSizing", "CompactTray", "TranslucentTaskbar" };
+        var names = new[] { "开始按钮位置", "图标大小", "任务栏高度", "功能区", "完整右键菜单", "按钮宽度", "小图标尺寸", "小按钮宽度", "系统按钮位置", "开始菜单位置", "搜索菜单位置", "Ctrl 菜单切换", "经典导航栏", "布局方案", "界面皮肤", "任务栏布局增强", "任务栏尺寸增强", "紧凑系统托盘", "透明任务栏", "最大化窗口明暗跟随" };
+        var properties = new[] { "StartOnLeft", "IconSize", "TaskbarHeight", "ClassicRibbon", "ClassicContextMenu", "TaskbarButtonWidth", "SmallIconSize", "SmallTaskbarButtonWidth", "OtherSystemButtonsOnLeft", "StartMenuOnLeft", "SearchMenuOnLeft", "ClassicMenuWithCtrl", "UseClassicNavigationBar", "Appearance", "Skin", "SkipTaskbarLayout", "SkipTaskbarSizing", "CompactTray", "TranslucentTaskbar", "FollowMaximizedTheme" };
         return properties.Select((name, i) => (Property: typeof(ShellProfile).GetProperty(name)!, Label: names[i]))
             .Where(item => !Equals(item.Property.GetValue(before), item.Property.GetValue(after))).Select(item => item.Label).ToArray();
     }

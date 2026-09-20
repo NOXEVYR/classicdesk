@@ -46,6 +46,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
     };
     public const string StyleAsset = "AppData/Engine/Mods/64/windows-11-taskbar-styler_1.9.dll";
     public const string BackdropAsset = "AppData/Engine/Mods/64/taskbar-background-helper_1.2.dll";
+    public const string AdaptiveBackdropAsset = "AppData/Engine/Mods/64/taskbar-background-helper_1.2-classicdesk.1.dll";
     static ActivationTarget[] PackageTargets(VerifiedActivationPackage package) => Enum.GetValues<ActivationTarget>()
         .Where(t => (t != ActivationTarget.TaskbarStyleMod || File.Exists(SafePath(package.Root, StyleAsset))) &&
             (t != ActivationTarget.TaskbarBackdropMod || File.Exists(SafePath(package.Root, BackdropAsset)))).ToArray();
@@ -85,6 +86,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
             if (seen.Count > 128 || total > 256 * 1024 * 1024) throw new InvalidDataException("资产清单超出此精简后端的范围。");
         }
         if (RequiredAssets.Any(a => !seen.Contains(a)) || executableHash is null) throw new InvalidDataException("运行包缺少必要引擎、模块或依赖。");
+        if (seen.Contains(AdaptiveBackdropAsset) && !seen.Contains(BackdropAsset)) throw new InvalidDataException("自适应背景模块需要保留原生透明回退组件。");
         if (seen.Contains(BackdropAsset) && !seen.Contains(StyleAsset)) throw new InvalidDataException("原生背景模块需要配套样式模块。");
         var knownModFiles = Targets.Where(p => p.Key is not (ActivationTarget.MainSettings or ActivationTarget.EngineSettings) &&
             (p.Key != ActivationTarget.TaskbarStyleMod || seen.Contains(StyleAsset)) &&
@@ -120,6 +122,8 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         var targets = PackageTargets(package);
         if ((profile.CompactTray || profile.TranslucentTaskbar) && !targets.Contains(ActivationTarget.TaskbarStyleMod))
             throw new InvalidDataException("此运行包未包含半透明和紧凑托盘组件，请使用新版运行包。");
+        if (profile.FollowMaximizedTheme && !File.Exists(SafePath(package.Root, AdaptiveBackdropAsset)))
+            throw new InvalidDataException("此运行包没有最大化窗口明暗跟随组件。");
         var before = targets.ToDictionary(t => t, t => Read(package, t));
         var desired = DesiredFiles(profile, before);
         return new(guards, targets.Select(t =>

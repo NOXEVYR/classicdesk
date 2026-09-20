@@ -11,11 +11,12 @@ public sealed class ShellNativeController : IShellNativeController
     // A self-consistent replacement manifest is not trusted by this application.
     public const string LegacyRuntimeManifest = "87EBC2871F686E9E26DFF7CCDCC65CD181AC98DB80EAEC442B8D82720C3E139E";
     public const string StyleRuntimeManifest = "2EBD2A6D098D7F63535687212F352B29F32D6E67E2866E69E2A71F3E7B314007";
-    public const string ReviewedRuntimeManifest = "A7F8F186C1F60946D26C0630C28DAC461EF36DC037906DFD3BBBC3038F0EAEFA";
+    public const string StaticRuntimeManifest = "A7F8F186C1F60946D26C0630C28DAC461EF36DC037906DFD3BBBC3038F0EAEFA";
+    public const string ReviewedRuntimeManifest = "A775D708F64B3832F7E23ECC700420DCB5C27C8C8EA3C0EEA3ECE6140AD10BE2";
     public static ActivationPackageCheck CheckReviewedPackage(string root)
     {
         var check = WindowsShellActivationHost.CheckPackage(root);
-        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest)
+        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest)
             throw new InvalidDataException("运行资产清单不是已核对的版本。");
         return check;
     }
@@ -124,12 +125,15 @@ public sealed class ShellNativeController : IShellNativeController
                 (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
                 (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
                 (applied.TranslucentTaskbar ? "；透明任务栏" : "") +
+                (applied.FollowMaximizedTheme ? "；最大化窗口明暗跟随" : "") +
                 (applied.CompactTray ? "；紧凑托盘" : "") +
                 (applied.ClassicContextMenu ? "；完整右键菜单" : "；Win11 右键菜单");
             return new("增强正在运行", "当前已应用规则：" + summary + "。\n登录恢复沿用这整套规则，与尚未应用的编辑草稿无关。资源管理器样式请在新开的窗口中检查。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);
         }
         if (profile.TranslucentTaskbar && !File.Exists(Path.Combine(packageRoot, WindowsShellActivationHost.BackdropAsset)))
             return new("透明任务栏需要新版运行组件", "此旧运行包保留恢复兼容；请使用包含原生背景模块的新版安装目录应用透明方案。");
+        if (profile.FollowMaximizedTheme && !File.Exists(Path.Combine(packageRoot, WindowsShellActivationHost.AdaptiveBackdropAsset)))
+            return new("窗口明暗跟随需要新版组件", "使用包含 ClassicDesk 窗口明暗跟随组件的运行包后才能应用；现有静态透明方案仍可恢复。");
         var modules = ShellBackendPlanner.CreatePlan(profile, new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", [])).Modules.Where(m => m.Selected).ToArray();
         if (modules.Length == 0)
             return new("未选择增强功能", "请勾选需要的增强。仅选择原生居中布局或 Windows 11 原生样式时，不启动后台引擎；可在 Windows 设置中调整原生对齐。");

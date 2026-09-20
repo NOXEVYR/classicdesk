@@ -62,16 +62,6 @@
       "sha256": "66402f68723c5c1551f5c5a84ec3c9618d3dce601a466e87126a7cfd298af0c3",
       "sourceUrl": "https://raw.githubusercontent.com/ramensoftware/windhawk-mods/f3ec3675168600d1decfcda97d2a12e375903ae9/mods/taskbar-background-helper.wh.cpp",
       "sourceSha256": "67c0c27df717f7333d47df8b3a6662c6b2d983a351933a1dd5a07e085626f285"
-    },
-    {
-      "id": "taskbar-background-helper",
-      "version": "1.2-classicdesk.1",
-      "build": "native/Build.ps1",
-      "bytes": 135680,
-      "sha256": "0639fc7d72dac763d7e95ac4558c0eeadb8b7fbf60231c69a8ec69b943d37a05",
-      "sourcePath": "native/taskbar-background-helper.wh.cpp",
-      "sourceSha256": "acd86a83231b0e0fa8078c75ca8d2f6fa08fedeb1cb13d9f3cb45cb38abb6579",
-      "policySourceSha256": "9daae0ac39ea6824f72dfc61080c0b055c2ab59e0280022b4e32ba39c84e83d7"
     }
   ],
   "assets": [
@@ -207,13 +197,6 @@
       "sha256": "66402f68723c5c1551f5c5a84ec3c9618d3dce601a466e87126a7cfd298af0c3",
       "source": "module",
       "sourcePath": "taskbar-background-helper_1.2.dll"
-    },
-    {
-      "path": "AppData/Engine/Mods/64/taskbar-background-helper_1.2-classicdesk.1.dll",
-      "bytes": 135680,
-      "sha256": "0639fc7d72dac763d7e95ac4558c0eeadb8b7fbf60231c69a8ec69b943d37a05",
-      "source": "module",
-      "sourcePath": "taskbar-background-helper_1.2-classicdesk.1.dll"
     }
   ]
 }

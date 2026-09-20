@@ -1,2 +1,6 @@
 # The application pins these exact bytes across Windows and other checkouts.
 runtime/*.json text eol=lf
+
+# Preserve exact native source bytes referenced by the runtime manifest.
+native/*.cpp -text
+native/*.h -text
