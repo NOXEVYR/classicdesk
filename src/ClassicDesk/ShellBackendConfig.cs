@@ -12,8 +12,8 @@ public static class ShellTaskbarStyle
 {
     public static Dictionary<string, string> BackdropSettings() => new()
     {
-        ["backgroundStyle"] = "blur", ["color.red"] = "0", ["color.green"] = "0", ["color.blue"] = "0",
-        ["color.accentColor"] = "0", ["color.transparency"] = "24", ["onlyWhenMaximized"] = "0", ["styleForDarkMode.use"] = "0"
+        ["backgroundStyle"] = "color", ["color.red"] = "0", ["color.green"] = "0", ["color.blue"] = "0",
+        ["color.accentColor"] = "0", ["color.transparency"] = "0", ["onlyWhenMaximized"] = "0", ["styleForDarkMode.use"] = "0"
     };
     public static Dictionary<string, string> Settings(bool compact, bool translucent)
     {
@@ -45,9 +45,20 @@ public static class ShellTaskbarStyle
             Style("SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=2,0,2,0");
             Style("SystemTray.OmniButton", "Padding=0");
             Style("SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=2,0,2,0");
-            Style("SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", "Padding=4,0,4,0");
+            Style("SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", "Padding=0");
             Style("SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=0");
             Style("SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", "Padding=0");
+            Style("SystemTray.SystemTrayFrame", "Margin=0", "Padding=0", "HorizontalAlignment=Right");
+            Style("StackPanel#SystemTrayFrameGrid, Grid#SystemTrayFrameGrid", "Margin=0", "Padding=0");
+            Style("SystemTray.OmniButton#NotificationCenterButton", "Margin=0", "Padding=0");
+            Style("SystemTray.DateTimeIconContent", "Margin=0", "Padding=0", "HorizontalAlignment=Right");
+            Style("SystemTray.DateTimeIconContent > Grid", "Margin=0", "Padding=0");
+            Style("TextBlock#TimeInnerTextBlock, TextBlock#DateInnerTextBlock", "TextAlignment=Right", "Margin=0");
+            // Keep a real, full-height hit target at the edge; do not hide
+            // Show Desktop or make the taskbar click-through.
+            Style("SystemTray.Stack#ShowDesktopStack", "Width=6", "MinWidth=6", "Margin=0", "Padding=0", "HorizontalAlignment=Right");
+            Style("SystemTray.Stack#ShowDesktopStack > Grid > SystemTray.StackListView > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView", "Width=6", "MinWidth=6", "Padding=0", "Margin=0");
+            Style("Rectangle#ShowDesktopPipe", "Width=1", "Margin=0", "HorizontalAlignment=Right");
         }
         return values;
     }

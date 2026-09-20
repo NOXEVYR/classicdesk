@@ -123,13 +123,13 @@ public sealed class ShellNativeController : IShellNativeController
             var summary = (applied.SkipTaskbarLayout ? "保留任务栏位置" : applied.StartOnLeft ? "开始靠左、应用居中" : "开始与应用居中") +
                 (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
                 (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
-                (applied.TranslucentTaskbar ? "；半透明任务栏" : "") +
+                (applied.TranslucentTaskbar ? "；透明任务栏" : "") +
                 (applied.CompactTray ? "；紧凑托盘" : "") +
                 (applied.ClassicContextMenu ? "；完整右键菜单" : "；Win11 右键菜单");
             return new("增强正在运行", "当前已应用规则：" + summary + "。\n登录恢复沿用这整套规则，与尚未应用的编辑草稿无关。资源管理器样式请在新开的窗口中检查。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);
         }
         if (profile.TranslucentTaskbar && !File.Exists(Path.Combine(packageRoot, WindowsShellActivationHost.BackdropAsset)))
-            return new("半透明任务栏需要新版运行组件", "此旧运行包保留恢复兼容；请使用包含原生背景模块的新版安装目录应用半透明方案。");
+            return new("透明任务栏需要新版运行组件", "此旧运行包保留恢复兼容；请使用包含原生背景模块的新版安装目录应用透明方案。");
         var modules = ShellBackendPlanner.CreatePlan(profile, new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", [])).Modules.Where(m => m.Selected).ToArray();
         if (modules.Length == 0)
             return new("未选择增强功能", "请勾选需要的增强。仅选择原生居中布局或 Windows 11 原生样式时，不启动后台引擎；可在 Windows 设置中调整原生对齐。");

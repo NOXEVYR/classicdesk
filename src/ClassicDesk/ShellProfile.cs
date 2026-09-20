@@ -65,7 +65,7 @@ public static class ShellPresets
     public static string DisplayName(ShellProfile profile) => All[Index(profile)].Name;
     public static IReadOnlyList<string> Changes(ShellProfile before, ShellProfile after)
     {
-        var names = new[] { "开始按钮位置", "图标大小", "任务栏高度", "功能区", "完整右键菜单", "按钮宽度", "小图标尺寸", "小按钮宽度", "系统按钮位置", "开始菜单位置", "搜索菜单位置", "Ctrl 菜单切换", "经典导航栏", "布局方案", "界面皮肤", "任务栏布局增强", "任务栏尺寸增强", "紧凑系统托盘", "半透明任务栏" };
+        var names = new[] { "开始按钮位置", "图标大小", "任务栏高度", "功能区", "完整右键菜单", "按钮宽度", "小图标尺寸", "小按钮宽度", "系统按钮位置", "开始菜单位置", "搜索菜单位置", "Ctrl 菜单切换", "经典导航栏", "布局方案", "界面皮肤", "任务栏布局增强", "任务栏尺寸增强", "紧凑系统托盘", "透明任务栏" };
         var properties = new[] { "StartOnLeft", "IconSize", "TaskbarHeight", "ClassicRibbon", "ClassicContextMenu", "TaskbarButtonWidth", "SmallIconSize", "SmallTaskbarButtonWidth", "OtherSystemButtonsOnLeft", "StartMenuOnLeft", "SearchMenuOnLeft", "ClassicMenuWithCtrl", "UseClassicNavigationBar", "Appearance", "Skin", "SkipTaskbarLayout", "SkipTaskbarSizing", "CompactTray", "TranslucentTaskbar" };
         return properties.Select((name, i) => (Property: typeof(ShellProfile).GetProperty(name)!, Label: names[i]))
             .Where(item => !Equals(item.Property.GetValue(before), item.Property.GetValue(after))).Select(item => item.Label).ToArray();
