@@ -14,6 +14,8 @@
 
 ClassicDesk 的界面、主题、图标和 C# 宿主实现随本仓库公开；与外部引擎的交互使用独立进程、配置文件和固定消息协议。上游名称、作者和许可不会因使用自有设置前端而被替换。
 
+0.11.9 开发源码另包含可选任务栏样式/背景资产的[固定清单](runtime/windows-x64-assets.json)，以及 [native/](native/README.md) 中基于 Taskbar Background Helper 和 Dynamic Taskbar Transparency 的 GPL-3.0-or-later 原生变体源码、策略头和构建脚本。该部分保留自己的许可声明与 [GPL 正文](native/COPYING)，不受仓库其他代码的版权保留声明覆盖。此次同步没有上传增强 DLL、引擎或本机运行配置，也没有变更公开前端包。
+
 ## 为什么首版不发布增强运行包
 
 GPLv3 对二进制分发及对应源代码交付有明确要求；完整对应源码包括生成、安装和运行所需的相关源代码与控制脚本，不能仅以几份模组源码和一个主页链接替代。具体条件参见 [GPLv3 第 1、6 节](https://github.com/ramensoftware/windhawk/blob/v1.7.3/LICENSE)。

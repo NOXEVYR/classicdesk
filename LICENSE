@@ -4,4 +4,5 @@ Copyright (c) 2026 ClassicDesk 项目权利人。保留所有权利。
 公开源码本身不构成对未明确授予权利的放弃或额外许可。
 
 第三方软件、名称和相关材料的权利归各自原作者或权利人。
+上述版权保留声明不覆盖 native/ 中明确标注 GPL-3.0-or-later 的原生模块；该部分按其源码声明及 native/COPYING 提供，来源说明见 native/README.md。
 本次前端包未捆绑第三方增强运行组件；其说明见 THIRD_PARTY.md。
