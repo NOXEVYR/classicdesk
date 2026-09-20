@@ -13,6 +13,16 @@ public sealed record VerifiedActivationPackage(string Root, string ManifestSha25
 // For INI targets Data is the exact file bytes in base64, not decoded/re-encoded text.
 // For alignment Data is canonical "0"/"1"; absence is Exists=false, Data="".
 public sealed record ActivationItemState(bool Exists, string Data, string Revision);
+public static class ActivationRecordedState
+{
+    // TaskbarAl has no per-value version. Windows timestamps the entire Advanced
+    // key, including unrelated login settings. Keep strict revisions at commit
+    // gates, but compare this single DWORD's value against durable ownership.
+    public static bool Matches(ActivationTarget target, ActivationItemState actual, ActivationItemState? recorded) =>
+        actual == recorded || (target == ActivationTarget.TaskbarAlignment && recorded is not null &&
+            actual.Exists == recorded.Exists && actual.Data == recorded.Data &&
+            (actual.Exists ? actual.Data is "0" or "1" : actual.Data == ""));
+}
 public sealed record ActivationChange(ActivationTarget Target, ActivationItemState Before, bool DesiredExists, string DesiredData);
 public sealed record ActivationGuards(string EnvironmentRevision, string PackageRevision,
     ActivationPresence StartAllBack, ActivationPresence OtherWindhawk);
@@ -260,10 +270,24 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
     {
         var expected = journal.Steps.ToDictionary(s => s.Change.Target,
             s => s.WritePhase == "confirmed" ? s.WriteReceipt!.After! : s.Change.Before);
-        foreach (var pair in expected)
-            if (host.Read(journal.Package, pair.Key) != pair.Value)
+        foreach (var pair in expected.ToArray())
+        {
+            var current = host.Read(journal.Package, pair.Key);
+            if (!ActivationRecordedState.Matches(pair.Key, current, pair.Value))
                 throw new InvalidOperationException("增强配置或原生对齐被外部修改，不自动覆盖；请在应用中检查恢复记录。");
+            // Freeze the current revision for the start gate; never rewrite the
+            // original receipt, original value or registry just to refresh it.
+            expected[pair.Key] = current;
+        }
         return expected;
+    }
+
+    public void VerifyAppliedConfiguration(Guid id)
+    {
+        using var lease = store.Acquire(id);
+        var journal = store.Load(id).Journal; ValidateJournal(journal);
+        if (journal.State != ShellActivationState.Active) throw new InvalidOperationException("没有已应用的完整规则。");
+        VerifyResumeTargets(journal);
     }
 
     public ActivationConfirmation CaptureConfirmation(VerifiedActivationPackage package, ShellProfile profile)
@@ -364,7 +388,7 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
             ValidatePreparation(journal.Package, journal.Profile, current); RequireSafe(current.Guards, journal.Package);
             if (Digest(current) != Digest(confirmation.Current)) throw new ActivationFailure("恢复确认后宿主或目标已变化。");
             foreach (var step in journal.Steps.Where(s => s.WritePhase == "confirmed"))
-                if (host.Read(journal.Package, step.Change.Target) != step.WriteReceipt!.After)
+                if (!ActivationRecordedState.Matches(step.Change.Target, host.Read(journal.Package, step.Change.Target), step.WriteReceipt!.After))
                     throw new ActivationFailure("恢复前发现外部修改，不停止进程或覆盖数据。");
             var health = host.InspectDaemon(journal.Daemon!);
             if (health is ActivationDaemonHealth.DifferentProcess or ActivationDaemonHealth.Unknown)
@@ -409,7 +433,8 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
                 {
                     var operationGuards = restoring ? journal.RestoreGuards ?? throw new InvalidDataException("恢复环境快照缺失。") : journal.Guards;
                     EnsureGuards(journal, restoring ? journal.Daemon : null, operationGuards);
-                    if (host.Read(journal.Package, step.Change.Target) != step.WriteReceipt!.After)
+                    var currentOwned = host.Read(journal.Package, step.Change.Target);
+                    if (restoring ? !ActivationRecordedState.Matches(step.Change.Target, currentOwned, step.WriteReceipt!.After) : currentOwned != step.WriteReceipt!.After)
                     { step.RestorePhase = "conflict"; step.Error = "当前值或修订已不属于本事务。"; uncertain = true; Persist(journal); continue; }
                     step.RestorePhase = "intent"; Persist(journal);
                     ActivationWriteResult receipt;
@@ -437,7 +462,8 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
                 foreach (var step in journal.Steps)
                 {
                     var expected = step.RestorePhase == "confirmed" ? step.RestoreReceipt!.After : step.Change.Before;
-                    if (host.Read(journal.Package, step.Change.Target) != expected)
+                    var currentFinal = host.Read(journal.Package, step.Change.Target);
+                    if (restoring ? !ActivationRecordedState.Matches(step.Change.Target, currentFinal, expected) : currentFinal != expected)
                     { uncertain = true; step.Error ??= "恢复结束时发现目标修订变化，保留当前数据。"; }
                 }
                 if (restoring && host.InspectDaemon(journal.Daemon!) != ActivationDaemonHealth.OwnedProcessExited)

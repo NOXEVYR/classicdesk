@@ -14,7 +14,7 @@ public static class ShellProgram
             {
                 var controller = LoginController(login);
                 var review = await controller.ReviewAsync(new ShellProfile()).ConfigureAwait(false);
-                if (review.IsRunning) return "原引擎已运行，没有启动第二个实例。";
+                if (review.IsRunning) return "原引擎已运行，整套已应用规则校验通过，没有重复启动。";
                 if (!review.CanResume) throw new InvalidOperationException(review.Title + "：" + review.Detail);
                 var result = await controller.ResumeAsync(review).ConfigureAwait(false);
                 if (result.State != ShellActivationState.Active || result.Error is not null) throw new InvalidOperationException(result.Error ?? "恢复记录需要检查。");
@@ -75,11 +75,10 @@ public static class ShellProgram
 
     static async Task WaitForShellAsync()
     {
-        await Task.Delay(TimeSpan.FromSeconds(15)).ConfigureAwait(false);
         var session = System.Diagnostics.Process.GetCurrentProcess().SessionId;
         string? previous = null; int stable = 0;
         // Bounded observations only during login. No resident monitor or restart.
-        for (var attempt = 0; attempt < 20; attempt++)
+        for (var attempt = 0; attempt < 60; attempt++)
         {
             var identities = new List<string>();
             foreach (var process in System.Diagnostics.Process.GetProcessesByName("explorer"))
@@ -93,7 +92,7 @@ public static class ShellProgram
             var current = string.Join(";", identities.Order());
             stable = current.Length > 0 && current == previous ? stable + 1 : 0; previous = current;
             if (stable >= 2) return;
-            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
         }
         throw new InvalidOperationException("Explorer 尚未稳定，未启动增强；可在应用中重新检查。");
     }

@@ -108,7 +108,14 @@ public sealed class ShellNativeController : IShellNativeController
             }
             if (health != ActivationDaemonHealth.SameProcessRunning)
                 return new("增强进程身份无法确认", "未启动另一个实例。请核对恢复记录。", CanRestore: true, RestoreTicket: ticket);
-            return new("增强正在运行", "沿用上次已应用的方案。更换组合前先恢复原设置。资源管理器样式只在新开的窗口生效，已打开的窗口可能保留旧布局。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);
+            try { coordinator.VerifyAppliedConfiguration(journal.Id); }
+            catch (Exception e) { return new("引擎正在运行，规则需要核对", e.Message, CanRestore: true, RestoreTicket: ticket); }
+            var applied = journal.Profile;
+            var summary = (applied.SkipTaskbarLayout ? "保留任务栏位置" : applied.StartOnLeft ? "开始靠左、应用居中" : "开始与应用居中") +
+                (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
+                (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
+                (applied.ClassicContextMenu ? "；完整右键菜单" : "；Win11 右键菜单");
+            return new("增强正在运行", "当前已应用规则：" + summary + "。\n登录恢复沿用这整套规则，与尚未应用的编辑草稿无关。资源管理器样式请在新开的窗口中检查。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);
         }
         var modules = ShellBackendPlanner.CreatePlan(profile, new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", [])).Modules.Where(m => m.Selected).ToArray();
         if (modules.Length == 0)

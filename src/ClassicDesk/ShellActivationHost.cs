@@ -137,11 +137,12 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
     {
         Guard(package, guards, AllowedProcess(package));
         var record = LoadOwnership(package, ownedWrite.OwnershipToken);
-        if (record.Phase != "confirmed" || record.Target != target || record.After != ownedWrite.After || record.Before != original || record.After != Read(package, target)) return Rejected("恢复归属或修订不匹配。");
+        var current = Read(package, target);
+        if (record.Phase != "confirmed" || record.Target != target || record.After != ownedWrite.After || record.Before != original || !ActivationRecordedState.Matches(target, current, record.After)) return Rejected("恢复归属或修订不匹配。");
         SaveOwnership(package, record with { Phase = "restore-intent" }, true);
         try
         {
-            var after = Exchange(package, target, record.After!, original.Exists, original.Data,
+            var after = Exchange(package, target, current, original.Exists, original.Data,
                 () => Guard(package, guards, AllowedProcess(package)));
             SaveOwnership(package, record with { Phase = "restored", Restored = after }, true);
             return new(ActivationOutcome.Confirmed, "restore-" + record.Token, after);

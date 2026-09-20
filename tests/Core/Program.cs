@@ -210,7 +210,11 @@ Test("resume restarts owned exited engine without rewriting original settings", 
 });
 Test("resume refuses live engine", f=>{var r=f.Activate();Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));Check(f.Host.Starts==1);});
 Test("resume refuses unknown or foreign process", f=>{var r=f.Activate();f.Host.ForcedHealth=ActivationDaemonHealth.DifferentProcess;Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));Check(f.Host.Stops==0&&f.Host.Starts==1);});
-Test("resume refuses changed original target", f=>{var r=f.Activate();f.Host.Running=false;f.Host.External(ActivationTarget.TaskbarAlignment);Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));Check(f.Host.Starts==1);});
+Test("resume refuses changed alignment value", f=>{var r=f.Activate();f.Host.Running=false;f.Host.States[ActivationTarget.TaskbarAlignment]=new(true,"0","external-value");Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));Check(f.Host.Starts==1);});
+Test("unrelated Advanced key timestamp permits resume and preserves original receipts", f=>{var r=f.Activate();var steps=JsonSerializer.Serialize(f.Journal().Steps);f.Host.Running=false;f.Host.External(ActivationTarget.TaskbarAlignment);Check(f.Core.Resume(f.Core.CaptureResumeConfirmation(r.JournalId)).State==ShellActivationState.Active);Check(f.Host.Writes==7&&JsonSerializer.Serialize(f.Journal().Steps)==steps);Check(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State==ShellActivationState.Restored);Check(f.Host.States[ActivationTarget.TaskbarAlignment].Data=="0");});
+Test("alignment metadata drift after confirmation still blocks start", f=>{var r=f.Activate();f.Host.Running=false;var c=f.Core.CaptureResumeConfirmation(r.JournalId);f.Host.External(ActivationTarget.TaskbarAlignment);Reject(()=>f.Core.Resume(c));Check(f.Host.Starts==1);});
+Test("applied rule audit rejects altered module even when daemon is running", f=>{var r=f.Activate();f.Core.VerifyAppliedConfiguration(r.JournalId);f.Host.External(ActivationTarget.ContextMenuMod);Reject(()=>f.Core.VerifyAppliedConfiguration(r.JournalId));Check(f.Host.Stops==0&&f.Host.Starts==1);});
+Test("applied rule audit tolerates unrelated registry metadata without rewriting", f=>{var r=f.Activate();f.Host.External(ActivationTarget.TaskbarAlignment);f.Core.VerifyAppliedConfiguration(r.JournalId);Check(f.Host.Writes==7&&f.Host.Restores==0);});
 Test("resume refuses late target drift", f=>{var r=f.Activate();f.Host.Running=false;var ticket=f.Core.CaptureResumeConfirmation(r.JournalId);f.Host.External(ActivationTarget.IconSizeMod);Reject(()=>f.Core.Resume(ticket));Check(f.Host.Starts==1);});
 Test("resume refuses late conflicting plugin", f=>{var r=f.Activate();f.Host.Running=false;var ticket=f.Core.CaptureResumeConfirmation(r.JournalId);f.Host.Sab=ActivationPresence.Present;Reject(()=>f.Core.Resume(ticket));Check(f.Host.Starts==1);});
 Test("resume definite launch rejection preserves recovery record and does not restore", f=>{var r=f.Activate();f.Host.Running=false;f.Host.StartBehavior="reject";var result=f.Core.Resume(f.Core.CaptureResumeConfirmation(r.JournalId));Check(result.State==ShellActivationState.Active&&result.Error!=null&&!f.Host.Running&&f.Host.Restores==0);});
@@ -314,7 +318,7 @@ sealed class FakeHost : IActivationHost
     public ActivationWriteResult RestoreOwned(VerifiedActivationPackage package, ActivationTarget target, ActivationWriteResult ownedWrite, ActivationItemState original, ActivationGuards guards)
     {
         CommitGuard(guards); Intent("restore", target); Restores++; RestoreOrder.Add(target);
-        if (owners.GetValueOrDefault(target) != ownedWrite.OwnershipToken || States[target] != ownedWrite.After) return new(ActivationOutcome.RejectedWithoutChange, null, null);
+        if (owners.GetValueOrDefault(target) != ownedWrite.OwnershipToken || !ActivationRecordedState.Matches(target, States[target], ownedWrite.After)) return new(ActivationOutcome.RejectedWithoutChange, null, null);
         var after = States[target] = new(original.Exists, original.Data, "restored-" + ++revision);
         if (FailRestoreTarget == target && RestoreBehavior == "unknown") return new(ActivationOutcome.Unknown, null, null);
         AfterRestore?.Invoke(target);

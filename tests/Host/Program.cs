@@ -6,7 +6,7 @@ var checks = new List<object>();
 var root = Path.Combine(AppContext.BaseDirectory, "isolated-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
 void Assert(bool value) { if (!value) throw new Exception("assertion failed"); }
 void Reject(Action action) { try { action(); } catch (Exception e) when (e is IOException or InvalidOperationException or InvalidDataException or ArgumentException) { return; } throw new Exception("expected rejection"); }
-void Test(string name, Action<Fixture> action) { var f = new Fixture(Path.Combine(root, checks.Count.ToString())); try { action(f); checks.Add(new { name, passed=true }); } catch(Exception e) { checks.Add(new { name, passed=false, error=e.ToString() }); } }
+void Test(string name, Action<Fixture> action) { if(args.Length > 1 && !System.Text.RegularExpressions.Regex.IsMatch(name,args[1])) return; var f = new Fixture(Path.Combine(root, checks.Count.ToString())); try { action(f); checks.Add(new { name, passed=true }); } catch(Exception e) { checks.Add(new { name, passed=false, error=e.ToString() }); } }
 Test("package check verifies assets and creates no ownership directory", f => { var p=f.Check(); Assert(p.VerifiedAssets==17 && !Directory.Exists(Path.Combine(f.PackageRoot,".classicdesk-activation")) && f.Registry.Reads==0 && f.Process.Starts==0); });
 Test("resume creates new process ownership and preserves all original settings", f => {
     var original=f.Originals(); var active=f.Activate(); var bytes=File.ReadAllBytes(Path.Combine(f.Logs,active.JournalId.ToString("N")+".json"));
@@ -19,6 +19,16 @@ Test("resume creates new process ownership and preserves all original settings",
     Assert(original.All(p=>File.ReadAllBytes(p.Key).SequenceEqual(p.Value)));
 });
 Test("resume ownership still rejects altered engine configuration", f => { var r=f.Activate(); f.Process.Running=false; File.AppendAllText(Path.Combine(f.PackageRoot,"AppData/settings.ini"),";changed",Encoding.Unicode); Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId)); Assert(f.Process.Starts==1&&f.Registry.Writes==1); });
+Test("next login tolerates unrelated key timestamp and restores original DWORD", f => {
+    var r=f.Activate(); var receipts=File.ReadAllText(Path.Combine(f.Logs,r.JournalId.ToString("N")+".json"));
+    f.Process.Running=false; f.Environment.Revision="new-login"; f.Registry.State=f.Registry.State with {Revision="unrelated-key-write"};
+    Assert(f.Core.Resume(f.Core.CaptureResumeConfirmation(r.JournalId)).State==ShellActivationState.Active && f.Registry.Writes==1);
+    var after=JsonSerializer.Deserialize<ActivationJournal>(File.ReadAllText(Path.Combine(f.Logs,r.JournalId.ToString("N")+".json")))!;
+    Assert(JsonSerializer.Serialize(after.Steps)==JsonSerializer.Serialize(JsonSerializer.Deserialize<ActivationJournal>(receipts)!.Steps));
+    Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State==ShellActivationState.Restored && f.Registry.State.Data=="0");
+});
+Test("changed alignment is preserved and blocks resume", f => { var r=f.Activate(); f.Process.Running=false; f.Registry.State=new(true,"0","user-change"); Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId)); Assert(f.Registry.State.Data=="0"&&f.Process.Starts==1); });
+Test("last moment metadata revision is still a strict start gate", f => { var r=f.Activate(); f.Process.Running=false; var c=f.Core.CaptureResumeConfirmation(r.JournalId); f.Process.BeforeStart=()=>f.Registry.State=f.Registry.State with {Revision="late-key-edit"}; var result=f.Core.Resume(c); Assert(result.Error is not null&&f.Process.Starts==1&&f.Registry.Writes==1); });
 Test("preboot identity differs from a reused current PID", f => { var now=new DateTime(2026,9,20,1,0,0,DateTimeKind.Utc); Assert(WindowsActivationProcesses.PredatesCurrentBoot(now.AddHours(-1).Ticks,now,600000)); Assert(!WindowsActivationProcesses.PredatesCurrentBoot(now.AddMinutes(-5).Ticks,now,600000)); Assert(!WindowsActivationProcesses.PredatesCurrentBoot(now.AddMinutes(-10).AddSeconds(-3).Ticks,now,600000)); });
 Test("invalid uptime never grants process ownership", f => { Assert(!WindowsActivationProcesses.PredatesCurrentBoot(1,DateTime.UtcNow,-1)); Assert(!WindowsActivationProcesses.PredatesCurrentBoot(0,DateTime.UtcNow,100)); Assert(!WindowsActivationProcesses.PredatesCurrentBoot(1,DateTime.UtcNow,long.MaxValue)); });
 ShellLoginRegistration Login(Fixture f) { var folder=Path.GetDirectoryName(f.Logs)!; var exe=Path.Combine(folder,"ClassicDesk.exe"); File.WriteAllText(exe,"isolated stub"); return new(Path.Combine(folder,"login"),Path.Combine(folder,"startup"),exe,f.PackageRoot); }
@@ -117,7 +127,7 @@ Test("legacy profiles omit default scope fields to retain journal fingerprints",
 });
 var failures=checks.Count(x=>!(bool)x.GetType().GetProperty("passed")!.GetValue(x)!);
 var source=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../src/ClassicDesk/ShellActivationHost.cs"));
-var report=new { passed=checks.Count-failures,failed=failures,realRegistryWrites=0,realProcessStarts=0,realProcessStops=0,realWindowInteractions=0,testMode="real isolated package files; injected fake registry/environment/process only",sourceSha256=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))),checks };
+var report=new { passed=checks.Count-failures,failed=failures,filter=args.Length>1?args[1]:null,realRegistryWrites=0,realProcessStarts=0,realProcessStops=0,realWindowInteractions=0,testMode="real isolated package files; injected fake registry/environment/process only",sourceSha256=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))),checks };
 var output=Path.GetFullPath(args[0]); Directory.CreateDirectory(Path.GetDirectoryName(output)!); File.WriteAllText(output,JsonSerializer.Serialize(report,new JsonSerializerOptions{WriteIndented=true})); Console.WriteLine(JsonSerializer.Serialize(report,new JsonSerializerOptions{WriteIndented=true})); return failures==0?0:1;
 sealed class Fixture {
  public string PackageRoot,Logs; public ShellProfile Profile=new(); public FakeAlignment Registry=new(); public FakeProcesses Process=new(); public FakeEnvironment Environment; public WindowsShellActivationHost Host; public ShellActivationCoordinator Core;
