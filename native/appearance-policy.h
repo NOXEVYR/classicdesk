@@ -10,12 +10,23 @@ inline int Median(std::array<int,9> samples,int count) {
     std::sort(samples.begin(),samples.begin()+count);
     return samples[count/2];
 }
-enum class Surface { Unknown, Desktop, Application, ShellFlyout };
+struct Bounds { long left,top,right,bottom; };
+inline bool ExpandedOnTaskbarMonitor(bool sameMonitor,bool maximized,Bounds frame,Bounds work) {
+    if(!sameMonitor || work.right<=work.left || work.bottom<=work.top) return false;
+    if(maximized) return true;
+    // DWM may round visible frame edges at fractional DPI scales.
+    constexpr int tolerance=2;
+    return frame.right>frame.left && frame.bottom>frame.top &&
+        frame.left<=work.left+tolerance && frame.top<=work.top+tolerance &&
+        frame.right>=work.right-tolerance && frame.bottom>=work.bottom-tolerance;
+}
+enum class Surface { Unknown, Desktop, Application, ExpandedApplication, ShellFlyout };
 enum class Backdrop { Preserve, Transparent, Opaque };
 enum class VisibleApps { Unknown, None, Present };
 inline Backdrop BackgroundFor(Surface surface,VisibleApps apps=VisibleApps::Unknown) {
     if(surface==Surface::Desktop) return Backdrop::Transparent;
-    if(surface==Surface::Application) return Backdrop::Opaque;
+    if(surface==Surface::Application) return Backdrop::Transparent;
+    if(surface==Surface::ExpandedApplication) return Backdrop::Opaque;
     // Minimize/show-desktop may leave focus on the taskbar or a hidden window.
     // No visible application is positive desktop evidence without a mouse click.
     if(apps==VisibleApps::None) return Backdrop::Transparent;

@@ -16,11 +16,12 @@ public sealed class ShellNativeController : IShellNativeController
     public const string SecondAdaptiveRuntimeManifest = "758AF898CD72226F5CA266E49B06ABC8D641C6E2409737F04B636499E7D2BE34";
     public const string ThirdAdaptiveRuntimeManifest = "DFBBB14F0943C48B4971C3F31F0BA422F3C032CCB093ABADDA8319BADE2783D0";
     public const string FourthAdaptiveRuntimeManifest = "73523BCC5CF7C294128C9F1D6A04A2D11456E9514C4457FFB4102A6742148BA5";
-    public const string ReviewedRuntimeManifest = "4CE7713E3B25903B7A33CE043F4A12338DA6B24BE69B09FF687092CD4D82DB44";
+    public const string FifthAdaptiveRuntimeManifest = "4CE7713E3B25903B7A33CE043F4A12338DA6B24BE69B09FF687092CD4D82DB44";
+    public const string ReviewedRuntimeManifest = "49C4EF0FB577AC4D053973F46FADD4B3F8AF6948863E63FDCD8B3E3AD5EAF423";
     public static ActivationPackageCheck CheckReviewedPackage(string root)
     {
         var check = WindowsShellActivationHost.CheckPackage(root);
-        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest && check.Package.ManifestSha256 != ThirdAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FourthAdaptiveRuntimeManifest)
+        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest && check.Package.ManifestSha256 != ThirdAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FourthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FifthAdaptiveRuntimeManifest)
             throw new InvalidDataException("运行资产清单不是已核对的版本。");
         return check;
     }
@@ -129,7 +130,7 @@ public sealed class ShellNativeController : IShellNativeController
                 (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
                 (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
                 (applied.TranslucentTaskbar ? "；透明任务栏" : "") +
-                (applied.FollowMaximizedTheme ? journal.Package.ManifestSha256 is ReviewedRuntimeManifest or FourthAdaptiveRuntimeManifest ? "；应用不透明、桌面透明" : "；最大化窗口明暗跟随（旧版组件）" : "") +
+                (applied.FollowMaximizedTheme ? journal.Package.ManifestSha256 == ReviewedRuntimeManifest ? "；仅最大化或全屏时不透明" : journal.Package.ManifestSha256 is FourthAdaptiveRuntimeManifest or FifthAdaptiveRuntimeManifest ? "；应用不透明、桌面透明（旧版组件）" : "；最大化窗口明暗跟随（旧版组件）" : "") +
                 (applied.CompactTray ? "；紧凑托盘" : "") +
                 (applied.ClassicContextMenu ? "；完整右键菜单" : "；Win11 右键菜单");
             return new("增强正在运行", "当前已应用规则：" + summary + "。\n登录恢复沿用这整套规则，与尚未应用的编辑草稿无关。资源管理器样式请在新开的窗口中检查。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);

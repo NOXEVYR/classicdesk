@@ -2,8 +2,22 @@
 #include <cassert>
 int main() {
     using namespace ClassicDeskAppearance;
-    // A normal browser and a full-screen app use the same opaque policy.
-    assert(BackgroundFor(Surface::Application)==Backdrop::Opaque);
+    // Ordinary browser/app windows leave the wallpaper visible. Only expanded
+    // windows make the bar opaque; restoring a window must clear it again.
+    assert(BackgroundFor(Surface::Application)==Backdrop::Transparent);
+    assert(BackgroundFor(Surface::ExpandedApplication)==Backdrop::Opaque);
+    Bounds work{0,0,2560,1368};
+    assert(!ExpandedOnTaskbarMonitor(true,false,{500,100,2200,1200},work));
+    assert(ExpandedOnTaskbarMonitor(true,true,{},work));
+    assert(ExpandedOnTaskbarMonitor(true,false,{0,0,2560,1440},work));
+    assert(ExpandedOnTaskbarMonitor(true,false,work,work));
+    assert(ExpandedOnTaskbarMonitor(true,false,{2,2,2558,1366},work));
+    assert(!ExpandedOnTaskbarMonitor(true,false,{3,0,2560,1368},work));
+    assert(!ExpandedOnTaskbarMonitor(true,false,{0,0,1280,1368},work));
+    assert(!ExpandedOnTaskbarMonitor(false,true,work,work));
+    assert(!ExpandedOnTaskbarMonitor(false,false,work,work));
+    assert(!ExpandedOnTaskbarMonitor(true,false,{},work));
+    assert(!ExpandedOnTaskbarMonitor(true,true,work,{}));
     assert(BackgroundFor(Surface::Desktop)==Backdrop::Transparent);
     // Opening Start/quick settings and transient missing foreground windows
     // must not turn an opaque application taskbar transparent.
@@ -14,7 +28,7 @@ int main() {
     assert(BackgroundFor(Surface::ShellFlyout,VisibleApps::Present)==Backdrop::Preserve);
     assert(BackgroundFor(Surface::Unknown,VisibleApps::Unknown)==Backdrop::Preserve);
     assert(BackgroundFor(Surface::Desktop,VisibleApps::Present)==Backdrop::Transparent);
-    assert(BackgroundFor(Surface::Application,VisibleApps::None)==Backdrop::Opaque);
+    assert(BackgroundFor(Surface::Application,VisibleApps::None)==Backdrop::Transparent);
     // Minimize-end/hide often arrive after the former app has lost focus.
     assert(NeedsRefresh(Change::Minimize,false,true,true));
     assert(NeedsRefresh(Change::Visibility,false,true,false));

@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-background-helper
 // @name            ClassicDesk adaptive taskbar background
-// @description     ClassicDesk fork: clear desktop, opaque foreground apps, event-driven.
+// @description     ClassicDesk fork: clear desktop/windowed apps, opaque maximized apps, event-driven.
 // @version         1.2-classicdesk.1
 // @author          ClassicDesk contributors
 // @include         explorer.exe
@@ -105,11 +105,11 @@ bool IsDesktop(HWND window) {
     GetClassNameW(window,name,ARRAYSIZE(name));
     return !_wcsicmp(name,L"Progman") || !_wcsicmp(name,L"WorkerW");
 }
-ClassicDeskAppearance::VisibleApps VisibleApplications() {
+ClassicDeskAppearance::VisibleApps VisibleApplications(HWND& application) {
     using namespace ClassicDeskAppearance;
     MONITORINFO monitor{sizeof(monitor)};
     if(!GetMonitorInfoW(MonitorFromWindow(taskbar,MONITOR_DEFAULTTONEAREST),&monitor)) return VisibleApps::Unknown;
-    struct Scan { RECT work; bool found=false,uncertain=false; } scan{monitor.rcWork};
+    struct Scan { RECT work; HWND found=nullptr; bool uncertain=false; } scan{monitor.rcWork};
     BOOL completed=EnumWindows([](HWND window,LPARAM value)->BOOL {
         auto& scan=*reinterpret_cast<Scan*>(value);
         if(!IsWindowVisible(window) || IsIconic(window) || IsDesktop(window) || IsShellSurface(window)) return TRUE;
@@ -120,10 +120,22 @@ ClassicDeskAppearance::VisibleApps VisibleApplications() {
         RECT frame{},visible{};
         if(!GetWindowRect(window,&frame)) {scan.uncertain=true;return TRUE;}
         if(!IntersectRect(&visible,&frame,&scan.work)) return TRUE;
-        scan.found=true;return FALSE;
+        scan.found=window;return FALSE;
     },reinterpret_cast<LPARAM>(&scan));
+    application=scan.found;
     if(scan.found) return VisibleApps::Present;
     return completed && !scan.uncertain ? VisibleApps::None : VisibleApps::Unknown;
+}
+bool IsExpanded(HWND window) {
+    auto taskbarMonitor=MonitorFromWindow(taskbar,MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor{sizeof(monitor)};
+    if(!GetMonitorInfoW(taskbarMonitor,&monitor)) return false;
+    RECT frame{};
+    if(FAILED(DwmGetWindowAttribute(window,9,&frame,sizeof(frame)))) GetWindowRect(window,&frame);
+    return ClassicDeskAppearance::ExpandedOnTaskbarMonitor(
+        MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST)==taskbarMonitor,IsZoomed(window),
+        {frame.left,frame.top,frame.right,frame.bottom},
+        {monitor.rcWork.left,monitor.rcWork.top,monitor.rcWork.right,monitor.rcWork.bottom});
 }
 // Nine local pixels are read only after a relevant event. No screen image,
 // window title, browsing content, or colour samples are retained or logged.
@@ -212,11 +224,19 @@ void RefreshState() {
         (SUCCEEDED(DwmGetWindowAttribute(foreground,14,&cloaked,sizeof(cloaked))) && cloaked);
     Surface surface=IsShellSurface(foreground) ? Surface::ShellFlyout :
         hidden ? Surface::Unknown : IsDesktop(foreground) ? Surface::Desktop : Surface::Application;
-    auto backdrop=BackgroundFor(surface, surface==Surface::Unknown || surface==Surface::ShellFlyout ?
-        VisibleApplications() : VisibleApps::Unknown);
+    auto apps=VisibleApps::Unknown;
+    if(surface==Surface::Unknown || surface==Surface::ShellFlyout) {
+        // Focus can stay on the taskbar after minimize. Resolve the top visible
+        // app so a remaining normal window also restores transparency.
+        HWND visible=nullptr;
+        apps=VisibleApplications(visible);
+        if(visible) { foreground=visible;surface=Surface::Application; }
+    }
+    if(surface==Surface::Application && IsExpanded(foreground)) surface=Surface::ExpandedApplication;
+    auto backdrop=BackgroundFor(surface,apps);
     if(backdrop==Backdrop::Preserve) return;
     bool opaque=backdrop==Backdrop::Opaque;
-    lastApplicationWindow=opaque ? foreground : nullptr;
+    lastApplicationWindow=surface==Surface::Application || surface==Surface::ExpandedApplication ? foreground : nullptr;
     MONITORINFO monitor{sizeof(monitor)};
     bool hasMonitor=GetMonitorInfoW(MonitorFromWindow(opaque?foreground:taskbar.load(),MONITOR_DEFAULTTONEAREST),&monitor);
     int brightness=-1;

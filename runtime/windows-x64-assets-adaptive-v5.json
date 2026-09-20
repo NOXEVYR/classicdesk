@@ -67,11 +67,11 @@
       "id": "taskbar-background-helper",
       "version": "1.2-classicdesk.1",
       "build": "native/Build.ps1",
-      "bytes": 145408,
-      "sha256": "361b23e43d0dc06f24cf263c4ee17fd759df7998a8dbf8b89fef36b44fd151de",
+      "bytes": 144896,
+      "sha256": "650d0ba4c7ab229bad1e315c112e0d97d09b81e746e5d7390eeaf93f777409f7",
       "sourcePath": "native/taskbar-background-helper.wh.cpp",
-      "sourceSha256": "59a68cc8e09140a6964e3543c96616dc212e052ca102a2d01d5c49b1536eb83a",
-      "policySourceSha256": "70d5d5f1266d8ac09cd7d99966a4c159fd5b3ea8faafb5979acdf0b9b66adf9b"
+      "sourceSha256": "bcf456f33a3b388911a7abb94809415c017273e8476e169e71c693fe56a549f6",
+      "policySourceSha256": "166594111ddfce3f9659a402430ec477f92625877db849cd508b1cdadb168b91"
     }
   ],
   "assets": [
@@ -210,8 +210,8 @@
     },
     {
       "path": "AppData/Engine/Mods/64/taskbar-background-helper_1.2-classicdesk.1.dll",
-      "bytes": 145408,
-      "sha256": "361b23e43d0dc06f24cf263c4ee17fd759df7998a8dbf8b89fef36b44fd151de",
+      "bytes": 144896,
+      "sha256": "650d0ba4c7ab229bad1e315c112e0d97d09b81e746e5d7390eeaf93f777409f7",
       "source": "module",
       "sourcePath": "taskbar-background-helper_1.2-classicdesk.1.dll"
     }
