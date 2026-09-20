@@ -43,8 +43,9 @@ struct AccentPolicy { int state; UINT flags; DWORD color; int animation; };
 struct CompositionData { int attribute; void* data; SIZE_T size; };
 using SetComposition = BOOL(WINAPI*)(HWND, CompositionData*);
 SetComposition setCompositionOriginal;
-HWND taskbar;
+std::atomic<HWND> taskbar{nullptr};
 std::atomic<HWND> eventWindow{nullptr};
+std::atomic<HWND> lastApplicationWindow{nullptr};
 HANDLE eventThread;
 DWORD eventThreadId;
 std::atomic<bool> stopping{false}, workQueued{false};
@@ -57,6 +58,25 @@ std::vector<Root> roots;
 using VisualUpdate = void(WINAPI*)(void*);
 VisualUpdate visualUpdateOriginal;
 VisualUpdate paddingUpdateOriginal;
+using LoadLibraryFunction = decltype(&LoadLibraryExW);
+LoadLibraryFunction loadLibraryOriginal;
+using CreateWindowFunction = decltype(&CreateWindowExW);
+CreateWindowFunction createWindowOriginal;
+std::atomic<bool> viewHooksAttempted{false};
+
+bool BindTaskbar(HWND window) {
+    if(stopping || !window) return false;
+    wchar_t name[64]{};GetClassNameW(window,name,ARRAYSIZE(name));
+    if(_wcsicmp(name,L"Shell_TrayWnd")) return false;
+    DWORD process=0;GetWindowThreadProcessId(window,&process);
+    if(process!=GetCurrentProcessId()) return false;
+    HWND previous=taskbar.load();
+    if(previous && !IsWindow(previous)) taskbar.compare_exchange_strong(previous,nullptr);
+    HWND expected=nullptr;
+    if(taskbar.compare_exchange_strong(expected,window) && eventWindow)
+        PostMessageW(eventWindow,WorkMessage,0,0);
+    return taskbar.load()==window;
+}
 
 bool IsShellSurface(HWND window) {
     wchar_t name[128]{};
@@ -84,6 +104,26 @@ bool IsDesktop(HWND window) {
     wchar_t name[128]{};
     GetClassNameW(window,name,ARRAYSIZE(name));
     return !_wcsicmp(name,L"Progman") || !_wcsicmp(name,L"WorkerW");
+}
+ClassicDeskAppearance::VisibleApps VisibleApplications() {
+    using namespace ClassicDeskAppearance;
+    MONITORINFO monitor{sizeof(monitor)};
+    if(!GetMonitorInfoW(MonitorFromWindow(taskbar,MONITOR_DEFAULTTONEAREST),&monitor)) return VisibleApps::Unknown;
+    struct Scan { RECT work; bool found=false,uncertain=false; } scan{monitor.rcWork};
+    BOOL completed=EnumWindows([](HWND window,LPARAM value)->BOOL {
+        auto& scan=*reinterpret_cast<Scan*>(value);
+        if(!IsWindowVisible(window) || IsIconic(window) || IsDesktop(window) || IsShellSurface(window)) return TRUE;
+        auto style=GetWindowLongPtrW(window,GWL_EXSTYLE);
+        if((style&(WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE)) && !(style&WS_EX_APPWINDOW)) return TRUE;
+        DWORD cloaked=0;
+        if(SUCCEEDED(DwmGetWindowAttribute(window,14,&cloaked,sizeof(cloaked))) && cloaked) return TRUE;
+        RECT frame{},visible{};
+        if(!GetWindowRect(window,&frame)) {scan.uncertain=true;return TRUE;}
+        if(!IntersectRect(&visible,&frame,&scan.work)) return TRUE;
+        scan.found=true;return FALSE;
+    },reinterpret_cast<LPARAM>(&scan));
+    if(scan.found) return VisibleApps::Present;
+    return completed && !scan.uncertain ? VisibleApps::None : VisibleApps::Unknown;
 }
 // Nine local pixels are read only after a relevant event. No screen image,
 // window title, browsing content, or colour samples are retained or logged.
@@ -162,19 +202,23 @@ void DiscoverRoot(void* instance) {
 void WINAPI VisualHook(void* instance) { visualUpdateOriginal(instance); DiscoverRoot(instance); }
 void WINAPI PaddingHook(void* instance) { paddingUpdateOriginal(instance); DiscoverRoot(instance); }
 void RefreshState() {
-    if(stopping || !IsWindow(taskbar)) return;
-    HWND foreground=GetForegroundWindow(); if(!foreground) return;
+    if(stopping) return;
+    if(!IsWindow(taskbar)) BindTaskbar(FindWindowW(L"Shell_TrayWnd",nullptr));
+    if(!IsWindow(taskbar)) return;
+    HWND foreground=GetForegroundWindow();
     using namespace ClassicDeskAppearance;
     DWORD cloaked=0;
-    bool hidden=IsIconic(foreground) || !IsWindowVisible(foreground) ||
+    bool hidden=!foreground || IsIconic(foreground) || !IsWindowVisible(foreground) ||
         (SUCCEEDED(DwmGetWindowAttribute(foreground,14,&cloaked,sizeof(cloaked))) && cloaked);
     Surface surface=IsShellSurface(foreground) ? Surface::ShellFlyout :
         hidden ? Surface::Unknown : IsDesktop(foreground) ? Surface::Desktop : Surface::Application;
-    auto backdrop=BackgroundFor(surface);
+    auto backdrop=BackgroundFor(surface, surface==Surface::Unknown || surface==Surface::ShellFlyout ?
+        VisibleApplications() : VisibleApps::Unknown);
     if(backdrop==Backdrop::Preserve) return;
     bool opaque=backdrop==Backdrop::Opaque;
+    lastApplicationWindow=opaque ? foreground : nullptr;
     MONITORINFO monitor{sizeof(monitor)};
-    bool hasMonitor=GetMonitorInfoW(MonitorFromWindow(opaque?foreground:taskbar,MONITOR_DEFAULTTONEAREST),&monitor);
+    bool hasMonitor=GetMonitorInfoW(MonitorFromWindow(opaque?foreground:taskbar.load(),MONITOR_DEFAULTTONEAREST),&monitor);
     int brightness=-1;
     if(hasMonitor) {
         RECT area=monitor.rcWork;
@@ -219,7 +263,13 @@ void CALLBACK WindowEvent(HWINEVENTHOOK,DWORD event,HWND window,LONG object,LONG
     if(stopping || !eventWindow || !window) return;
     if(event!=EVENT_SYSTEM_FOREGROUND && event!=EVENT_SYSTEM_MINIMIZESTART && event!=EVENT_SYSTEM_MINIMIZEEND && object!=OBJID_WINDOW) return;
     HWND foreground=GetForegroundWindow();
-    if(event!=EVENT_SYSTEM_FOREGROUND && window!=foreground && !IsDesktop(window)) return;
+    using namespace ClassicDeskAppearance;
+    Change change=event==EVENT_SYSTEM_FOREGROUND ? Change::Foreground :
+        (event==EVENT_SYSTEM_MINIMIZESTART || event==EVENT_SYSTEM_MINIMIZEEND) ? Change::Minimize :
+        (event==EVENT_OBJECT_SHOW || event==EVENT_OBJECT_HIDE) ? Change::Visibility :
+        event==EVENT_OBJECT_DESTROY ? Change::Destroyed : Change::Other;
+    if(!NeedsRefresh(change,window==foreground || IsDesktop(window),
+        GetAncestor(window,GA_ROOT)==window,window==lastApplicationWindow.load())) return;
     ++eventCount;
     if(!workQueued.exchange(true)) PostMessageW(eventWindow,WorkMessage,0,0);
 }
@@ -231,7 +281,7 @@ DWORD WINAPI EventThread(void*) {
     eventWindow=CreateWindowExW(0,wc.lpszClassName,L"",0,0,0,0,0,HWND_MESSAGE,nullptr,wc.hInstance,nullptr);
     if(!eventWindow) { UnregisterClassW(wc.lpszClassName,wc.hInstance); winrt::uninit_apartment(); return 1; }
     std::vector<HWINEVENTHOOK> hooks;
-    for(DWORD event:{EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_MINIMIZESTART,EVENT_SYSTEM_MINIMIZEEND,EVENT_OBJECT_LOCATIONCHANGE,EVENT_OBJECT_NAMECHANGE,EVENT_OBJECT_SHOW,EVENT_OBJECT_HIDE}) {
+    for(DWORD event:{EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_MINIMIZESTART,EVENT_SYSTEM_MINIMIZEEND,EVENT_OBJECT_LOCATIONCHANGE,EVENT_OBJECT_NAMECHANGE,EVENT_OBJECT_SHOW,EVENT_OBJECT_HIDE,EVENT_OBJECT_DESTROY}) {
         auto hook=SetWinEventHook(event,event,nullptr,WindowEvent,0,0,WINEVENT_OUTOFCONTEXT);
         if(hook) hooks.push_back(hook);
     }
@@ -243,6 +293,7 @@ DWORD WINAPI EventThread(void*) {
     winrt::uninit_apartment(); return 0;
 }
 BOOL WINAPI CompositionHook(HWND window,CompositionData* data) {
+    if(!taskbar) BindTaskbar(window);
     if(!stopping && window==taskbar && data && data->attribute==19) {
         AccentPolicy policy{2,0x13,desiredColor.load(),0};
         CompositionData replacement{19,&policy,sizeof(policy)};
@@ -250,25 +301,52 @@ BOOL WINAPI CompositionHook(HWND window,CompositionData* data) {
     }
     return setCompositionOriginal(window,data);
 }
-}
-BOOL Wh_ModInit() {
-    taskbar=FindWindowW(L"Shell_TrayWnd",nullptr); DWORD process=0;
-    GetWindowThreadProcessId(taskbar,&process);
-    if(!taskbar || process!=GetCurrentProcessId()) return FALSE;
-    if(!Wh_GetIntSetting(L"followMaximizedWindow")) return FALSE;
+HMODULE TaskbarViewModule() {
     auto module=GetModuleHandleW(L"Taskbar.View.dll");
-    if(!module) module=GetModuleHandleW(L"ExplorerExtensions.dll");
-    if(!module) return FALSE;
+    return module ? module : GetModuleHandleW(L"ExplorerExtensions.dll");
+}
+bool HookView(HMODULE module,bool apply) {
+    if(!module || stopping || viewHooksAttempted.exchange(true)) return true;
     WindhawkUtils::SYMBOL_HOOK hooks[]={
         {{LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},&visualUpdateOriginal,VisualHook},
         {{LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))"},&paddingUpdateOriginal,PaddingHook}
     };
-    if(!WindhawkUtils::HookSymbols(module,hooks,ARRAYSIZE(hooks))) return FALSE;
+    if(!WindhawkUtils::HookSymbols(module,hooks,ARRAYSIZE(hooks))) {
+        Wh_Log(L"ClassicDesk: taskbar theme symbols unavailable; no repeated hook attempts.");return false;
+    }
+    if(apply && !Wh_ApplyHookOperations()) return false;
+    return true;
+}
+HMODULE WINAPI LoadLibraryHook(LPCWSTR path,HANDLE file,DWORD flags) {
+    auto module=loadLibraryOriginal(path,file,flags);
+    if(module && !stopping && !viewHooksAttempted && module==TaskbarViewModule()) HookView(module,true);
+    return module;
+}
+HWND WINAPI CreateWindowHook(DWORD exStyle,LPCWSTR cls,LPCWSTR title,DWORD style,
+    int x,int y,int width,int height,HWND parent,HMENU menu,HINSTANCE instance,LPVOID param) {
+    HWND window=createWindowOriginal(exStyle,cls,title,style,x,y,width,height,parent,menu,instance,param);
+    if(BindTaskbar(window)) ApplyNative();
+    return window;
+}
+}
+BOOL Wh_ModInit() {
+    if(!Wh_GetIntSetting(L"followMaximizedWindow")) return FALSE;
+    BindTaskbar(FindWindowW(L"Shell_TrayWnd",nullptr));
+    // Early injection is valid: subscribe before Taskbar.View or Shell_TrayWnd
+    // exist instead of failing startup and waiting for a manual engine reload.
+    if(!taskbar) desiredColor=ClearColor;
     auto address=(SetComposition)GetProcAddress(GetModuleHandleW(L"user32.dll"),"SetWindowCompositionAttribute");
     if(!address || !WindhawkUtils::SetFunctionHook(address,CompositionHook,&setCompositionOriginal)) return FALSE;
+    if(!WindhawkUtils::SetFunctionHook(CreateWindowExW,CreateWindowHook,&createWindowOriginal)) return FALSE;
+    auto kernel=GetModuleHandleW(L"kernelbase.dll");
+    auto loader=kernel ? reinterpret_cast<LoadLibraryFunction>(GetProcAddress(kernel,"LoadLibraryExW")) : nullptr;
+    if(!loader || !WindhawkUtils::SetFunctionHook(loader,LoadLibraryHook,&loadLibraryOriginal)) return FALSE;
+    if(!HookView(TaskbarViewModule(),false)) return FALSE;
     return TRUE;
 }
 void Wh_ModAfterInit() {
+    HookView(TaskbarViewModule(),true); // Close the Init-to-hook-activation race.
+    if(!taskbar) BindTaskbar(FindWindowW(L"Shell_TrayWnd",nullptr));
     ApplyNative(); eventThread=CreateThread(nullptr,0,EventThread,nullptr,0,&eventThreadId);
 }
 void Wh_ModBeforeUninit() {

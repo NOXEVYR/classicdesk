@@ -12,10 +12,21 @@ inline int Median(std::array<int,9> samples,int count) {
 }
 enum class Surface { Unknown, Desktop, Application, ShellFlyout };
 enum class Backdrop { Preserve, Transparent, Opaque };
-inline Backdrop BackgroundFor(Surface surface) {
+enum class VisibleApps { Unknown, None, Present };
+inline Backdrop BackgroundFor(Surface surface,VisibleApps apps=VisibleApps::Unknown) {
     if(surface==Surface::Desktop) return Backdrop::Transparent;
     if(surface==Surface::Application) return Backdrop::Opaque;
+    // Minimize/show-desktop may leave focus on the taskbar or a hidden window.
+    // No visible application is positive desktop evidence without a mouse click.
+    if(apps==VisibleApps::None) return Backdrop::Transparent;
     return Backdrop::Preserve;
+}
+enum class Change { Foreground, Minimize, Visibility, Destroyed, Other };
+inline bool NeedsRefresh(Change change,bool relevant,bool topLevel,bool tracked) {
+    if(change==Change::Foreground || change==Change::Minimize) return true;
+    if(change==Change::Destroyed) return tracked;
+    if(change==Change::Visibility) return topLevel || relevant || tracked;
+    return relevant;
 }
 inline bool Dark(int brightness,bool previous) {
     if(brightness>=0 && brightness<110) return true;

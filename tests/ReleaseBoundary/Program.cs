@@ -22,6 +22,8 @@ var manifestBytes = File.ReadAllBytes(Path.Combine(sourceRoot.FullName, "runtime
 allChecks.Add(new { name = "Reviewed runtime lock bytes match the compiled pin", passed = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(manifestBytes)) == ShellNativeController.ReviewedRuntimeManifest });
 var oldAdaptiveBytes = File.ReadAllBytes(Path.Combine(sourceRoot.FullName, "runtime", "windows-x64-assets-adaptive-v3.json"));
 allChecks.Add(new { name = "Previous adaptive package keeps its recovery pin", passed = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(oldAdaptiveBytes)) == ShellNativeController.ThirdAdaptiveRuntimeManifest });
+var foregroundAdaptiveBytes = File.ReadAllBytes(Path.Combine(sourceRoot.FullName, "runtime", "windows-x64-assets-adaptive-v4.json"));
+allChecks.Add(new { name = "Foreground adaptive package keeps its recovery pin", passed = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(foregroundAdaptiveBytes)) == ShellNativeController.FourthAdaptiveRuntimeManifest });
 using (var manifest = JsonDocument.Parse(manifestBytes))
 {
     var module = manifest.RootElement.GetProperty("modules").EnumerateArray().Single(m => m.GetProperty("version").GetString() == "1.2-classicdesk.1");

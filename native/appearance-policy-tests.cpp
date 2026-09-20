@@ -9,6 +9,18 @@ int main() {
     // must not turn an opaque application taskbar transparent.
     assert(BackgroundFor(Surface::ShellFlyout)==Backdrop::Preserve);
     assert(BackgroundFor(Surface::Unknown)==Backdrop::Preserve);
+    assert(BackgroundFor(Surface::ShellFlyout,VisibleApps::None)==Backdrop::Transparent);
+    assert(BackgroundFor(Surface::Unknown,VisibleApps::None)==Backdrop::Transparent);
+    assert(BackgroundFor(Surface::ShellFlyout,VisibleApps::Present)==Backdrop::Preserve);
+    assert(BackgroundFor(Surface::Unknown,VisibleApps::Unknown)==Backdrop::Preserve);
+    assert(BackgroundFor(Surface::Desktop,VisibleApps::Present)==Backdrop::Transparent);
+    assert(BackgroundFor(Surface::Application,VisibleApps::None)==Backdrop::Opaque);
+    // Minimize-end/hide often arrive after the former app has lost focus.
+    assert(NeedsRefresh(Change::Minimize,false,true,true));
+    assert(NeedsRefresh(Change::Visibility,false,true,false));
+    assert(NeedsRefresh(Change::Destroyed,false,false,true));
+    assert(!NeedsRefresh(Change::Visibility,false,false,false));
+    assert(!NeedsRefresh(Change::Other,false,true,false));
     assert(Luminance(0,0,0)==0 && Luminance(255,255,255)==255);
     assert(Luminance(243,243,243)>150 && Luminance(32,32,32)<110);
     assert(Median({255,255,255,255,255,0,0,0,0},9)==255);
