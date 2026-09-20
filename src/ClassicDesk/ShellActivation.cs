@@ -81,6 +81,7 @@ public sealed class ActivationJournal
 }
 public sealed record ActivationJournalSnapshot(ActivationJournal Journal, string Revision);
 public sealed record ActivationRestoreConfirmation(Guid JournalId, string JournalRevision, ActivationPreparation Current, string Fingerprint);
+public sealed record ActivationResumeConfirmation(Guid JournalId, string JournalRevision, ActivationPreparation Current, string Fingerprint);
 public sealed record ActivationResult(Guid JournalId, ShellActivationState State, string? Error, bool VisualEffectVerified = false);
 public sealed record ActivationRecoveryReview(ActivationJournal Journal, bool RequiresManualReview, string Reason);
 
@@ -201,6 +202,70 @@ internal static class ActivationFileReplace
 
 public sealed class ShellActivationCoordinator(IActivationHost host, IActivationJournalStore store)
 {
+    public ActivationResumeConfirmation CaptureResumeConfirmation(Guid id)
+    {
+        using var lease = store.Acquire(id);
+        var snapshot = store.Load(id); var journal = snapshot.Journal; ValidateJournal(journal);
+        if (journal.State != ShellActivationState.Active || host.InspectDaemon(journal.Daemon!) != ActivationDaemonHealth.OwnedProcessExited)
+            throw new InvalidOperationException("仅能继续已确认退出、且尚未恢复的增强事务。");
+        var current = Clone(host.Inspect(journal.Package, journal.Profile));
+        ValidatePreparation(journal.Package, journal.Profile, current); RequireSafe(current.Guards, journal.Package);
+        VerifyResumeTargets(journal);
+        return new(id, snapshot.Revision, current, Digest(new { id, snapshot.Revision, current }));
+    }
+
+    public ActivationResult Resume(ActivationResumeConfirmation confirmation)
+    {
+        using var lease = store.Acquire(confirmation.JournalId);
+        var snapshot = store.Load(confirmation.JournalId); var journal = snapshot.Journal; ValidateJournal(journal);
+        using var packageLease = host.AcquirePackageLease(journal.Package);
+        if (snapshot.Revision != confirmation.JournalRevision || journal.State != ShellActivationState.Active ||
+            confirmation.Fingerprint != Digest(new { id = confirmation.JournalId, Revision = confirmation.JournalRevision, current = confirmation.Current }))
+            throw new InvalidOperationException("继续运行的确认记录已变化。");
+        if (host.InspectDaemon(journal.Daemon!) != ActivationDaemonHealth.OwnedProcessExited)
+            throw new InvalidOperationException("原引擎未确认退出，不启动第二个实例。");
+        var current = host.Inspect(journal.Package, journal.Profile);
+        ValidatePreparation(journal.Package, journal.Profile, current); RequireSafe(current.Guards, journal.Package);
+        if (Digest(current) != Digest(confirmation.Current)) throw new InvalidOperationException("继续运行前宿主或配置发生变化。");
+        var expected = VerifyResumeTargets(journal);
+        // Preserve the exact original settings and write receipts. Resume changes only
+        // the owned daemon identity; it never restores/reapplies the desktop profile.
+        var previous = journal.Daemon;
+        try
+        {
+            journal.State = ShellActivationState.Starting; journal.DaemonPhase = "start-intent"; journal.Error = null; Persist(journal);
+            ActivationStartResult result;
+            try { result = host.StartDaemon(journal.Package, current.Guards, expected); }
+            catch (Exception e) { result = new(ActivationOutcome.Unknown, null, e.Message); }
+            if (result.Outcome == ActivationOutcome.RejectedWithoutChange)
+            {
+                journal.State = ShellActivationState.Active; journal.DaemonPhase = "started"; journal.Daemon = previous;
+                journal.Error = result.Error ?? "本次未启动增强，原恢复记录保持不变。"; Persist(journal); return Result(journal);
+            }
+            if (result.Outcome != ActivationOutcome.Confirmed || !ValidDaemon(journal.Package, result.Identity))
+            { journal.DaemonPhase = "start-unknown"; journal.Error = result.Error ?? "继续启动结果未知，停止自动处理。"; return Manual(journal); }
+            journal.Daemon = result.Identity; journal.DaemonPhase = "started"; Persist(journal);
+            if (host.InspectDaemon(journal.Daemon!) != ActivationDaemonHealth.SameProcessRunning)
+            { journal.Error = "继续启动后的引擎身份未确认。"; return Manual(journal); }
+            foreach (var pair in expected)
+                if (host.Read(journal.Package, pair.Key) != pair.Value)
+                { journal.Error = "继续启动期间配置变化，保留记录供检查。"; return Manual(journal); }
+            journal.State = ShellActivationState.Active; Persist(journal); return Result(journal);
+        }
+        catch (JournalFailure e) { return PersistenceStopped(journal, e); }
+        catch (Exception e) { journal.Error = e.Message; return TryManual(journal); }
+    }
+
+    Dictionary<ActivationTarget, ActivationItemState> VerifyResumeTargets(ActivationJournal journal)
+    {
+        var expected = journal.Steps.ToDictionary(s => s.Change.Target,
+            s => s.WritePhase == "confirmed" ? s.WriteReceipt!.After! : s.Change.Before);
+        foreach (var pair in expected)
+            if (host.Read(journal.Package, pair.Key) != pair.Value)
+                throw new InvalidOperationException("增强配置或原生对齐被外部修改，不自动覆盖；请在应用中检查恢复记录。");
+        return expected;
+    }
+
     public ActivationConfirmation CaptureConfirmation(VerifiedActivationPackage package, ShellProfile profile)
     {
         ValidatePackage(package); profile.Validate();

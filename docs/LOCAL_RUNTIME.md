@@ -1,6 +1,6 @@
 # 本地增强试用准备
 
-本地 0.11.1-dev 已支持[按需选择四类功能](FEATURE_SELECTION.md)。首次检查仍只选择任务栏；资源管理器与右键菜单可单独勾选，应用范围不会改写用户保存的完整方案。当前尚未完成真实桌面效果与性能验收。
+本地 0.11.2-dev 支持[按需选择四类功能](FEATURE_SELECTION.md)及登录恢复。首次检查仍只选择任务栏；资源管理器与右键菜单可单独勾选，应用范围不会改写用户保存的完整方案。Windows 11 25H2 单屏已观察到开始靠左、应用居中分离和新窗口 Win10 功能区；完整兼容性和同条件性能对照尚未完成。
 
 ## 固定组件与离线准备
 
@@ -11,7 +11,7 @@
 下载清单中的官方安装器和模块，校验其摘要。使用已安装的 7-Zip 解压安装器，**不执行安装器**。保留解压后的 `Engine/$R1` 目录结构；不要用 PowerShell 双引号展开 `$R1`。将四个模块按清单中的 `sourcePath` 命名后存入同一目录。准备脚本不会下载文件、安装服务或启动引擎。
 
 ```powershell
-dotnet publish ./src/ClassicDesk/ClassicDesk.csproj -c Release -o ./artifacts/local-test/app -p:Version=0.11.0-dev
+dotnet publish ./src/ClassicDesk/ClassicDesk.csproj -c Release -o ./artifacts/local-test/app
 ./scripts/Prepare-Runtime.ps1 `
   -ApplicationDll ./artifacts/local-test/app/ClassicDesk.dll `
   -Installer ./artifacts/downloads/windhawk_setup.exe `
@@ -31,7 +31,17 @@ dotnet ./artifacts/local-test/app/ClassicDesk.dll --check-runtime "$PWD/artifact
 dotnet ./artifacts/local-test/app/ClassicDesk.dll --inspect-system
 ```
 
-准备后四个模块均为 `Disabled=1`，主程序和引擎均为 `SafeMode=1`；更新检查、托盘和工具窗口保持停用。要实际试用，打开此构建的设置窗口，进入“系统应用检查”，选择功能并重新检查，核对提示后点击“试用所选功能”。没有无人值守启用命令，也不会添加开机启动。
+准备后四个模块均为 `Disabled=1`，主程序和引擎均为 `SafeMode=1`；更新检查、托盘和工具窗口保持停用。要实际试用，打开此构建的设置窗口，进入“系统应用检查”，选择功能并重新检查，核对提示后点击“试用所选功能”。首次启用仍需要显式操作，打开设置窗口不会自动应用方案。
+
+## 登录后继续已有增强
+
+增强正在运行时，可勾选“登录后保持上次已应用的增强”。这会添加当前用户启动目录中的 `ClassicDesk-resume.vbs`，以隐藏方式调用 `--resume-login`；不会创建服务、计划任务或常驻监控程序。前端不打开窗口，等待 Explorer 稳定后只检查一次，结束即退出。启动目录被 Windows 或其他管理工具禁用时不会运行；不能把启动项存在当作下次登录已验证。
+
+登录恢复仅接续唯一的 Active 事务：核对固定组件、原引擎身份、冲突、原始配置修订，再启动引擎并保存新的进程身份。不会重新应用草稿、改写七项设置、丢弃原始备份，或启动第二个已有引擎。配置被外部修改、身份不明、启动结果未知时保留记录并停止，可在面板查看上次检查结果。注册表 Advanced 键的修订检查较保守，其他程序修改同键也可能阻止继续运行，不能自动忽略这种变化。
+
+关闭勾选只关闭以后的登录恢复，当前增强仍运行。“恢复原设置”先关闭登录恢复，再恢复本事务拥有的设置。引擎已退出但配置仍保留时，面板显示“继续运行”。移动安装目录前需从原目录关闭登录恢复；不接管另一份安装的启动项。
+
+启动恢复已通过隔离测试；下次真实 Windows 登录的自动执行仍待观察。资源管理器模块对新建窗口生效，已打开的窗口可能保持旧布局，不应为了切换外观反复重启 Explorer。
 
 若检测到 StartAllBack 已加载或其他 Windhawk 实例，启用被阻止。应先保存工作，再通过现有工具停用并确认其卸载出当前会话；必要的注销或 Explorer 重启属于单独的实机切换步骤，准备脚本不执行这些动作。恢复使用原运行目录和本机事务记录，不能删除目录后指望恢复仍可执行。
 

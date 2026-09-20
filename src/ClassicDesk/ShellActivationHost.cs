@@ -471,9 +471,23 @@ public sealed class WindowsActivationProcesses : IActivationProcesses
     }
     public ActivationDaemonHealth Inspect(ActivationDaemonIdentity identity)
     {
-        try { using var process = Process.GetProcessById(identity.ProcessId); if (!Matches(process, identity)) return ActivationDaemonHealth.DifferentProcess; return process.HasExited ? ActivationDaemonHealth.OwnedProcessExited : ActivationDaemonHealth.SameProcessRunning; }
+        // A recorded process from a previous Windows boot cannot still be alive.
+        // Do not confuse a reused PID with ownership, and never stop that new process.
+        try
+        {
+            using var process = Process.GetProcessById(identity.ProcessId);
+            if (!Matches(process, identity)) return PredatesCurrentBoot(identity.CreationTimeUtcTicks, DateTime.UtcNow, Environment.TickCount64)
+                ? ActivationDaemonHealth.OwnedProcessExited : ActivationDaemonHealth.DifferentProcess;
+            return process.HasExited ? ActivationDaemonHealth.OwnedProcessExited : ActivationDaemonHealth.SameProcessRunning;
+        }
         catch (ArgumentException) { return ActivationDaemonHealth.OwnedProcessExited; }
         catch { return ActivationDaemonHealth.Unknown; }
+    }
+    public static bool PredatesCurrentBoot(long creationUtcTicks, DateTime nowUtc, long uptimeMilliseconds)
+    {
+        if (creationUtcTicks <= 0 || uptimeMilliseconds < 0 || uptimeMilliseconds > nowUtc.Ticks / TimeSpan.TicksPerMillisecond) return false;
+        var bootTicks = nowUtc.Ticks - uptimeMilliseconds * TimeSpan.TicksPerMillisecond;
+        return creationUtcTicks < bootTicks - TimeSpan.FromSeconds(5).Ticks;
     }
     public ActivationStopResult Stop(ActivationDaemonIdentity identity)
     {

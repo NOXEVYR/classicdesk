@@ -7,13 +7,19 @@ using System.Windows.Shell;
 namespace ClassicDesk;
 
 public sealed record ShellNativeReview(string Title, string Detail, bool CanEnable = false, bool CanRestore = false,
-    ActivationConfirmation? EnableTicket = null, ActivationRestoreConfirmation? RestoreTicket = null);
+    ActivationConfirmation? EnableTicket = null, ActivationRestoreConfirmation? RestoreTicket = null,
+    bool CanResume = false, ActivationResumeConfirmation? ResumeTicket = null, bool IsRunning = false);
 
 public interface IShellNativeController
 {
     Task<ShellNativeReview> ReviewAsync(ShellProfile profile);
     Task<ActivationResult> EnableAsync(ShellNativeReview review);
     Task<ActivationResult> RestoreAsync(ShellNativeReview review);
+    Task<ActivationResult> ResumeAsync(ShellNativeReview review) => throw new NotSupportedException();
+    bool SupportsLoginResume => false;
+    bool LoginResumeEnabled => false;
+    string LoginResumeDetail => "";
+    Task SetLoginResumeAsync(bool enabled) => throw new NotSupportedException();
 }
 
 /// <summary>A user-opened review sheet. Construction does not inspect or change the host.</summary>
@@ -29,6 +35,8 @@ public sealed class ShellNativePanel : Window
     readonly Button enable;
     readonly Button restore;
     readonly Button refresh;
+    readonly CheckBox? loginChoice;
+    bool updatingLogin;
     ShellNativeReview? review;
     bool busy, closed, applying;
     int generation;
@@ -63,7 +71,15 @@ public sealed class ShellNativePanel : Window
         body.Children.Add(new Border { Background = Brushes.White, CornerRadius = new CornerRadius(9), BorderBrush = Color("#E1E6EE"), BorderThickness = new Thickness(1), Child = summary });
         var statusBox = new StackPanel { Margin = new Thickness(2, 20, 2, 0) }; state.FontSize = 15; statusBox.Children.Add(state); detail.Margin = new Thickness(0, 7, 0, 0); detail.Foreground = Color("#656C77"); detail.LineHeight = 20; statusBox.Children.Add(detail); body.Children.Add(statusBox);
         AutomationProperties.SetLiveSetting(state, AutomationLiveSetting.Polite);
-        var note = Text("首次切换尚未实机验收。增强效果需要后台引擎运行，设置窗口可以退出。", 11); note.Foreground = Color("#8A7351"); note.LineHeight = 18; note.Margin = new Thickness(2, 17, 2, 8); body.Children.Add(note);
+        var note = Text("增强效果需要后台引擎运行，设置窗口可以退出。资源管理器样式请在新开的窗口中检查。", 11); note.Foreground = Color("#8A7351"); note.LineHeight = 18; note.Margin = new Thickness(2, 17, 2, 8); body.Children.Add(note);
+        if (controller.SupportsLoginResume)
+        {
+            loginChoice = new CheckBox { Content = "登录后保持上次已应用的增强", Margin = new Thickness(2, 8, 2, 8), IsEnabled = false };
+            AutomationProperties.SetAutomationId(loginChoice, "native-login-resume");
+            loginChoice.Checked += (_, _) => { if (!updatingLogin) _ = ChangeLoginAsync(true); };
+            loginChoice.Unchecked += (_, _) => { if (!updatingLogin) _ = ChangeLoginAsync(false); };
+            body.Children.Add(loginChoice);
+        }
         var actions = new Grid { Margin = new Thickness(24, 12, 24, 13) }; actions.ColumnDefinitions.Add(new()); actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var footer = new Border { Background = Color("#FCFCFD"), BorderBrush = Color("#E4E7ED"), BorderThickness = new Thickness(0, 1, 0, 0), Child = actions }; Grid.SetRow(footer, 3); root.Children.Add(footer);
         refresh = Button("重新检查", () => _ = RefreshAsync()); refresh.HorizontalAlignment = HorizontalAlignment.Left; actions.Children.Add(refresh);
@@ -97,6 +113,12 @@ public sealed class ShellNativePanel : Window
             var result = await controller.ReviewAsync(Selection.Apply(profile)).WaitAsync(TimeSpan.FromSeconds(10));
             if (closed || request != generation) return;
             review = result; state.Text = result.Title; detail.Text = result.Detail;
+            if (loginChoice is not null)
+            {
+                updatingLogin = true;
+                try { loginChoice.IsChecked = controller.LoginResumeEnabled; detail.Text += "\n" + controller.LoginResumeDetail; }
+                finally { updatingLogin = false; }
+            }
         }
         catch (TimeoutException) { if (!closed) { state.Text = "检查超时"; detail.Text = "稍后可重试，本次没有进行切换。"; } }
         catch (Exception e) { if (!closed) { state.Text = "暂时无法切换"; detail.Text = e.Message; } }
@@ -107,18 +129,18 @@ public sealed class ShellNativePanel : Window
     public Task RestoreAsync() => ExecuteAsync(true);
     async Task ExecuteAsync(bool restoring)
     {
-        if (busy || closed || review is null || (restoring ? !review.CanRestore : !review.CanEnable)) return;
+        if (busy || closed || review is null || (restoring ? !review.CanRestore : !(review.CanEnable || review.CanResume))) return;
         var captured = review; SetBusy(true); applying = true;
         state.Text = restoring ? "正在恢复" : "正在启用";
         detail.Text = "正在核对文件修订，并保存恢复记录。此过程不会重启资源管理器。";
         try
         {
             // A host mutation must finish its durable journal; do not detach it on a UI timeout.
-            var result = await (restoring ? controller.RestoreAsync(captured) : controller.EnableAsync(captured));
+            var result = await (restoring ? controller.RestoreAsync(captured) : captured.CanResume ? controller.ResumeAsync(captured) : controller.EnableAsync(captured));
             review = null;
-            state.Text = result.State switch { ShellActivationState.Active => "增强引擎已启动", ShellActivationState.Restored => "原设置已恢复", ShellActivationState.RolledBack => "切换未完成，已回退", _ => "需要检查恢复记录" };
+            state.Text = result.Error is not null ? "操作未完成，请重新检查" : result.State switch { ShellActivationState.Active => "增强引擎已启动", ShellActivationState.Restored => "原设置已恢复", ShellActivationState.RolledBack => "切换未完成，已回退", _ => "需要检查恢复记录" };
             detail.Text = result.State switch {
-                ShellActivationState.Active => "所选功能的配置与进程已回读。请检查对应的任务栏、资源管理器或菜单效果；实机效果和占用尚未验收。切换其他组合前，请先恢复本次设置。",
+                ShellActivationState.Active => result.Error ?? "所选功能的配置与进程已回读。资源管理器样式请在新开的窗口中检查，旧窗口不会立即切换。切换其他组合前，请先恢复本次设置。",
                 ShellActivationState.Restored => "已恢复本次事务拥有的原始设置，并确认自己的引擎退出。请检查实际桌面。",
                 _ => result.Error ?? "已保留记录，未把不确定状态当作成功。" };
             detail.Text += "\n记录：" + result.JournalId.ToString("N");
@@ -126,7 +148,29 @@ public sealed class ShellNativePanel : Window
         catch (Exception e) { review = null; state.Text = "操作未完成"; detail.Text = e.Message + "\n重新检查后再继续，当前错误不会触发自动重试。"; }
         finally { applying = false; SetBusy(false); }
     }
-    void SetBusy(bool value) { busy = value; refresh.IsEnabled = !value; enable.IsEnabled = !value && review?.CanEnable == true; restore.IsEnabled = !value && review?.CanRestore == true; foreach (var choice in featureChoices) choice.IsEnabled = !value && (bool)choice.Tag; }
+    async Task ChangeLoginAsync(bool enabled)
+    {
+        if (busy || closed) return;
+        SetBusy(true); applying = true;
+        try { await controller.SetLoginResumeAsync(enabled); detail.Text = enabled ? "已设置登录后继续上次已应用的增强；检查结束后启动程序退出。" : "已关闭登录恢复，当前增强保持运行。"; }
+        catch (Exception e) { state.Text = "登录恢复未更改"; detail.Text = e.Message; }
+        finally
+        {
+            applying = false; updatingLogin = true;
+            try { if (loginChoice is not null) loginChoice.IsChecked = controller.LoginResumeEnabled; }
+            catch (Exception e) { detail.Text += "\n" + e.Message; }
+            finally { updatingLogin = false; SetBusy(false); }
+        }
+    }
+    void SetBusy(bool value)
+    {
+        busy = value; refresh.IsEnabled = !value;
+        enable.Content = review?.CanResume == true ? "继续运行" : "试用所选功能";
+        enable.IsEnabled = !value && (review?.CanEnable == true || review?.CanResume == true);
+        restore.IsEnabled = !value && review?.CanRestore == true;
+        if (loginChoice is not null) loginChoice.IsEnabled = !value && (review?.IsRunning == true || loginChoice.IsChecked == true);
+        foreach (var choice in featureChoices) choice.IsEnabled = !value && (bool)choice.Tag;
+    }
     void FeatureRow(Panel parent, string name, string description, string id, bool selected, Func<bool, ShellFeatureSelection> changed, bool available = true)
     {
         var label = new StackPanel(); label.Children.Add(Text(name, 12, true));

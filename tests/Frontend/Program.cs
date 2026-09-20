@@ -287,6 +287,31 @@ internal static class FrontendChecks
             Capture(panel, 660, 650, "按需功能-菜单与导航栏-660x650.png"); Bounds(panel, 660, 650);
             Capture(panel, 520, 460, "按需功能-最小窗口-520x460.png"); Bounds(panel, 520, 460);
         });
+        Check("已停止引擎的主操作继续旧事务，不调用新启用", () =>
+        {
+            var operations = new TaskbarReviewProbe { AllowResume = true };
+            var panel = new ShellNativePanel(new ShellProfile(), operations); Windows.Add(panel); Await(panel.RefreshAsync());
+            Require(panel.EnableAvailable && Logical<Button>(panel).Single(b => AutomationProperties.GetAutomationId(b) == "native-enable").Content?.ToString() == "继续运行", "未显示继续运行。");
+            Await(panel.EnableAsync()); Require(operations.Resumes == 1 && operations.Enables == 0, "继续运行误调用启用。");
+        });
+        Check("未启动成功的 Active 记录不会显示成功", () =>
+        {
+            var operations = new TaskbarReviewProbe { AllowResume = true, ResumeError = "引擎启动被拒绝" };
+            var panel = new ShellNativePanel(new ShellProfile(), operations); Windows.Add(panel); Await(panel.RefreshAsync()); Await(panel.EnableAsync());
+            Require(panel.StatusText.Contains("未完成"), "有错误的 Active 记录被显示为成功。");
+        });
+        Check("登录恢复只由显式勾选更改，刷新不写启动项", () =>
+        {
+            var operations = new TaskbarReviewProbe { SupportLogin = true };
+            var panel = new ShellNativePanel(new ShellProfile(), operations); Windows.Add(panel); Await(panel.RefreshAsync());
+            var choice = Logical<CheckBox>(panel).Single(c => AutomationProperties.GetAutomationId(c) == "native-login-resume");
+            Require(!choice.IsEnabled && operations.LoginWrites == 0, "未运行时可以打开登录恢复或刷新写了配置。");
+            operations.Running = true; Await(panel.RefreshAsync()); Require(choice.IsEnabled, "已运行时仍不能设置登录恢复。");
+            choice.IsChecked = true; Pump(); Require(operations.LoginWrites == 1 && operations.LoginOn, "显式勾选未保存。");
+            Await(panel.RefreshAsync()); Require(operations.LoginWrites == 1 && choice.IsChecked == true, "刷新再次写入或取消勾选。");
+            Capture(panel, 660, 650, "登录恢复-增强正在运行-660x650.png"); Bounds(panel, 660, 650);
+            Capture(panel, 520, 460, "登录恢复-最小窗口-520x460.png"); Bounds(panel, 520, 460);
+        });
         Check("原生菜单和命令栏不提供无效增强勾选", () =>
         {
             var panel = new ShellNativePanel(ShellPresets.All[1].Profile, new TaskbarReviewProbe()); Windows.Add(panel);
@@ -589,16 +614,23 @@ internal static class FrontendChecks
     sealed class TaskbarReviewProbe : IShellNativeController
     {
         public bool AllowEnable;
+        public bool AllowResume, SupportLogin, Running, LoginOn;
+        public string? ResumeError;
+        public int Resumes, LoginWrites;
         public int Enables;
         public int Calls;
         public ShellProfile? Received;
         public Task<ShellNativeReview> ReviewAsync(ShellProfile profile)
         {
             Calls++; Received = profile;
-            return Task.FromResult(new ShellNativeReview("组件已核对", "实际效果和占用需要实机验证。", CanEnable: AllowEnable));
+            return Task.FromResult(new ShellNativeReview(Running ? "增强正在运行" : "组件已核对", "资源管理器样式请在新开的窗口中检查。", CanEnable: AllowEnable, CanResume: AllowResume, IsRunning: Running));
         }
         public Task<ActivationResult> EnableAsync(ShellNativeReview review) { Enables++; throw new InvalidOperationException("测试不允许启用。"); }
         public Task<ActivationResult> RestoreAsync(ShellNativeReview review) => throw new InvalidOperationException("测试不允许恢复。");
+        public Task<ActivationResult> ResumeAsync(ShellNativeReview review) { Resumes++; return Task.FromResult(new ActivationResult(Guid.NewGuid(), ShellActivationState.Active, ResumeError)); }
+        public bool SupportsLoginResume => SupportLogin;
+        public bool LoginResumeEnabled => LoginOn;
+        public Task SetLoginResumeAsync(bool enabled) { LoginWrites++; LoginOn = enabled; return Task.CompletedTask; }
     }
     static void Capture(Window window, int width, int height, string name)
     {

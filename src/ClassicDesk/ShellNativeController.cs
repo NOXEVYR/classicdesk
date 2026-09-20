@@ -4,7 +4,7 @@ using System.Windows;
 
 namespace ClassicDesk;
 
-/// <summary>Explicit settings-window actions. No timer, startup activation, service installation, or autostart.</summary>
+/// <summary>Explicit settings actions and opt-in resumption of an existing owned transaction.</summary>
 public sealed class ShellNativeController : IShellNativeController
 {
     // This manifest and every referenced asset were reviewed from the fixed official package.
@@ -13,6 +13,7 @@ public sealed class ShellNativeController : IShellNativeController
     readonly string packageRoot, journalDirectory;
     readonly IActivationHost host;
     readonly ShellActivationCoordinator coordinator;
+    readonly ShellLoginRegistration? login;
     readonly SemaphoreSlim gate = new(1, 1);
     // Default review scope remains taskbar-only; the panel can opt into other features.
     public static ShellProfile TaskbarOnly(ShellProfile proposal)
@@ -20,16 +21,17 @@ public sealed class ShellNativeController : IShellNativeController
         ArgumentNullException.ThrowIfNull(proposal); proposal.Validate();
         return proposal with { ClassicRibbon = false, UseClassicNavigationBar = false, ClassicContextMenu = false };
     }
-    public ShellNativeController(string root, string journals, IActivationHost adapter)
+    public ShellNativeController(string root, string journals, IActivationHost adapter, ShellLoginRegistration? loginRegistration = null)
     {
         packageRoot = Path.GetFullPath(root); journalDirectory = Path.GetFullPath(journals); host = adapter;
         coordinator = new(host, new FileActivationJournalStore(journalDirectory));
+        login = loginRegistration;
     }
     public static void Open(Window owner, ShellProfile profile)
     {
         var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "原生组件-未启用"));
         var journals = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassicDesk", "NativeTransactions");
-        var panel = new ShellNativePanel(profile, new ShellNativeController(root, journals, WindowsShellActivationHost.CreateForWindows())) { Owner = owner };
+        var panel = new ShellNativePanel(profile, new ShellNativeController(root, journals, WindowsShellActivationHost.CreateForWindows(), ShellLoginRegistration.Current())) { Owner = owner };
         // User clicked the settings button. Never called on app startup or by offscreen tests.
         panel.ShowDialog();
     }
@@ -46,7 +48,26 @@ public sealed class ShellNativeController : IShellNativeController
     public Task<ActivationResult> RestoreAsync(ShellNativeReview review) => Serialized(() =>
     {
         if (!review.CanRestore || review.RestoreTicket is null) throw new InvalidOperationException("请先检查恢复记录。");
+        login?.SetEnabled(false);
         return coordinator.Restore(review.RestoreTicket);
+    });
+    public Task<ActivationResult> ResumeAsync(ShellNativeReview review) => Serialized(() =>
+    {
+        if (!review.CanResume || review.ResumeTicket is null) throw new InvalidOperationException("请先检查已停止的增强。");
+        var pending = PendingRecords();
+        if (pending.Length != 1 || pending[0].Id != review.ResumeTicket.JournalId) throw new InvalidOperationException("恢复记录已变化。");
+        var verified = WindowsShellActivationHost.CheckPackage(packageRoot, ReviewedRuntimeManifest).Package;
+        if (pending[0].Package != verified) throw new InvalidOperationException("增强组件已变化。");
+        return coordinator.Resume(review.ResumeTicket);
+    });
+    public bool SupportsLoginResume => login is not null;
+    public bool LoginResumeEnabled => login?.Enabled == true;
+    public string LoginResumeDetail => login?.LastResult() ?? "";
+    public Task SetLoginResumeAsync(bool enabled) => Serialized(() =>
+    {
+        if (login is null) throw new InvalidOperationException("此实例不管理登录恢复。");
+        if (enabled && !Review(new ShellProfile()).IsRunning) throw new InvalidOperationException("先启用并确认增强正在运行，再保持登录恢复。");
+        login.SetEnabled(enabled); return true;
     });
     async Task<T> Serialized<T>(Func<T> operation)
     {
@@ -75,7 +96,19 @@ public sealed class ShellNativeController : IShellNativeController
             if (!string.Equals(Path.GetFullPath(journal.Package.Root), packageRoot, StringComparison.OrdinalIgnoreCase))
                 return new("另一份 ClassicDesk 正在管理增强", "请使用原运行目录恢复，避免启动第二个引擎。");
             var ticket = coordinator.CaptureRestoreConfirmation(journal.Id);
-            return new("已有方案正在使用", "先恢复上次方案，再启用新方案。恢复只处理本工具确认拥有、且未被外部修改的设置。", CanRestore: true, RestoreTicket: ticket);
+            var health = host.InspectDaemon(journal.Daemon!);
+            if (health == ActivationDaemonHealth.OwnedProcessExited)
+            {
+                try
+                {
+                    var resume = coordinator.CaptureResumeConfirmation(journal.Id);
+                    return new("配置已保留，增强引擎已停止", "点击“继续运行”沿用上次已应用的方案；不会覆盖当前草稿，也不会重写系统设置。", CanRestore: true, RestoreTicket: ticket, CanResume: true, ResumeTicket: resume);
+                }
+                catch (Exception e) { return new("增强未运行，需要检查", e.Message, CanRestore: true, RestoreTicket: ticket); }
+            }
+            if (health != ActivationDaemonHealth.SameProcessRunning)
+                return new("增强进程身份无法确认", "未启动另一个实例。请核对恢复记录。", CanRestore: true, RestoreTicket: ticket);
+            return new("增强正在运行", "沿用上次已应用的方案。更换组合前先恢复原设置。资源管理器样式只在新开的窗口生效，已打开的窗口可能保留旧布局。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);
         }
         var modules = ShellBackendPlanner.CreatePlan(profile, new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", [])).Modules.Where(m => m.Selected).ToArray();
         if (modules.Length == 0)

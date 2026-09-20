@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellLoginResume.cs" Link="ShellLoginResume.cs" />
     <Compile Include="../../src/ClassicDesk/ShellProfileLibrary.cs" Link="ShellProfileLibrary.cs" />
     <Compile Include="../../src/ClassicDesk/AppIcons.cs" Link="AppIcons.cs" />
     <Compile Include="../../src/ClassicDesk/ShellPreview.cs" Link="ShellPreview.cs" />

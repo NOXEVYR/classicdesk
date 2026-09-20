@@ -199,6 +199,23 @@ static (string Staged, string Target) ReplacementFiles(Fixture f)
     var staged = Path.Combine(root, "replacement.tmp"); var target = Path.Combine(root, "current.json");
     File.WriteAllText(staged, "replacement"); File.WriteAllText(target, "original"); return (staged, target);
 }
+Test("resume restarts owned exited engine without rewriting original settings", f => {
+    var active=f.Activate(); var original=f.Journal().Steps.Select(s=>JsonSerializer.Serialize(s)).ToArray(); var writes=f.Host.Writes;
+    f.Host.Running=false; f.Host.EnvironmentRevision="new-boot";
+    var result=f.Core.Resume(f.Core.CaptureResumeConfirmation(active.JournalId));
+    Check(result.State==ShellActivationState.Active && f.Host.Running && f.Host.Starts==2 && f.Host.Writes==writes && f.Host.Restores==0 && f.Host.Stops==0);
+    Check(f.Journal().Steps.Select(s=>JsonSerializer.Serialize(s)).SequenceEqual(original));
+    Check(f.Core.Restore(f.Core.CaptureRestoreConfirmation(active.JournalId)).State==ShellActivationState.Restored);
+    Check(f.Host.States.All(p=>p.Value.Data==f.Host.Original[p.Key].Data));
+});
+Test("resume refuses live engine", f=>{var r=f.Activate();Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));Check(f.Host.Starts==1);});
+Test("resume refuses unknown or foreign process", f=>{var r=f.Activate();f.Host.ForcedHealth=ActivationDaemonHealth.DifferentProcess;Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));Check(f.Host.Stops==0&&f.Host.Starts==1);});
+Test("resume refuses changed original target", f=>{var r=f.Activate();f.Host.Running=false;f.Host.External(ActivationTarget.TaskbarAlignment);Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));Check(f.Host.Starts==1);});
+Test("resume refuses late target drift", f=>{var r=f.Activate();f.Host.Running=false;var ticket=f.Core.CaptureResumeConfirmation(r.JournalId);f.Host.External(ActivationTarget.IconSizeMod);Reject(()=>f.Core.Resume(ticket));Check(f.Host.Starts==1);});
+Test("resume refuses late conflicting plugin", f=>{var r=f.Activate();f.Host.Running=false;var ticket=f.Core.CaptureResumeConfirmation(r.JournalId);f.Host.Sab=ActivationPresence.Present;Reject(()=>f.Core.Resume(ticket));Check(f.Host.Starts==1);});
+Test("resume definite launch rejection preserves recovery record and does not restore", f=>{var r=f.Activate();f.Host.Running=false;f.Host.StartBehavior="reject";var result=f.Core.Resume(f.Core.CaptureResumeConfirmation(r.JournalId));Check(result.State==ShellActivationState.Active&&result.Error!=null&&!f.Host.Running&&f.Host.Restores==0);});
+Test("resume uncertain start blocks repeat", f=>{var r=f.Activate();f.Host.Running=false;f.Host.StartBehavior="unknown";var result=f.Core.Resume(f.Core.CaptureResumeConfirmation(r.JournalId));Check(result.State==ShellActivationState.ManualReview&&f.Host.Stops==0);Reject(()=>f.Core.CaptureResumeConfirmation(r.JournalId));});
+Test("resume journal failure before launch does not start", f=>{var r=f.Activate();f.Host.Running=false;var ticket=f.Core.CaptureResumeConfirmation(r.JournalId);f.Store.Fail=j=>j.State==ShellActivationState.Starting;var result=f.Core.Resume(ticket);Check(result.State==ShellActivationState.ManualReview&&f.Host.Starts==1);});
 var failed = results.Count(x => !(bool)x.GetType().GetProperty("passed")!.GetValue(x)!);
 var source = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../src/ClassicDesk/ShellActivation.cs"));
 var report = new { passed = results.Count - failed, failed, mode = "fake-host and isolated journal files only", realHostWrites = 0, realProcessStarts = 0, realProcessStops = 0, realDesktopInteractions = 0, sourceSha256 = File.Exists(source) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))) : null, checks = results };
