@@ -187,6 +187,8 @@ public sealed class ShellSettingsWindow : Window
             Tile("按钮宽度", "按钮宽度控制图标两侧留白；与图标大小分别设置。", PixelChoice(ShellProfile.ButtonWidths, Draft.TaskbarButtonWidth, value => Change(Draft with { TaskbarButtonWidth = value })), "system");
             settings.Children.Add(sizeTiles);
             var advancedRows = new StackPanel();
+            AddRow(advancedRows, "启用布局调整", "关闭时保留当前位置参数与设计预览。", Toggle(!Draft.SkipTaskbarLayout, value => Change(Draft with { SkipTaskbarLayout = !value })));
+            AddRow(advancedRows, "启用尺寸调整", "关闭时保留图标、栏高和按钮尺寸参数。", Toggle(!Draft.SkipTaskbarSizing, value => Change(Draft with { SkipTaskbarSizing = !value })));
             AddRow(advancedRows, "小图标尺寸", "Windows 使用小图标模式时的尺寸。", PixelChoice(ShellProfile.IconSizes, Draft.SmallIconSize, value => Change(Draft with { SmallIconSize = value })));
             AddRow(advancedRows, "小按钮宽度", "Windows 使用小图标模式时的按钮宽度。", PixelChoice(ShellProfile.ButtonWidths, Draft.SmallTaskbarButtonWidth, value => Change(Draft with { SmallTaskbarButtonWidth = value })));
             var system = Toggle(Draft.OtherSystemButtonsOnLeft, value => Change(Draft with { OtherSystemButtonsOnLeft = value })); dependentControls["otherButtons"] = system; AddRow(advancedRows, "其他系统按钮靠左", "搜索、任务视图和小组件；开始按钮居中时不生效。", system);
@@ -401,9 +403,9 @@ public sealed class ShellSettingsWindow : Window
     { var note = Label(text, 11); note.Foreground = Brush("#8B95A3"); note.Margin = new Thickness(2, 12, 2, 0); AutomationProperties.SetAutomationId(note, id); settings.Children.Add(note); }
     void UpdateDependencies()
     {
-        if (dependentControls.TryGetValue("otherButtons", out var system)) system.IsEnabled = Draft.StartOnLeft;
-        if (dependentControls.TryGetValue("startMenu", out var start)) start.IsEnabled = Draft.StartOnLeft;
-        if (dependentControls.TryGetValue("searchMenu", out var search)) search.IsEnabled = Draft.StartOnLeft && Draft.StartMenuOnLeft;
+        if (dependentControls.TryGetValue("otherButtons", out var system)) system.IsEnabled = Draft.StartOnLeft && !Draft.SkipTaskbarLayout;
+        if (dependentControls.TryGetValue("startMenu", out var start)) start.IsEnabled = Draft.StartOnLeft && !Draft.SkipTaskbarLayout;
+        if (dependentControls.TryGetValue("searchMenu", out var search)) search.IsEnabled = Draft.StartOnLeft && Draft.StartMenuOnLeft && !Draft.SkipTaskbarLayout;
         if (dependentControls.TryGetValue("ctrlMenu", out var ctrl)) ctrl.IsEnabled = Draft.ClassicContextMenu;
         if (page == 1)
         { var note = settings.Children.OfType<TextBlock>().SingleOrDefault(t => AutomationProperties.GetAutomationId(t) == "explorer-mode-note"); if (note is not null) note.Text = Draft.ClassicRibbon ? "主页、共享、查看完整展开；此模式不保留 Windows 11 标签页。" : Draft.UseClassicNavigationBar ? "采用旧版 Windows 11 导航布局，保留标签页。" : "使用当前 Windows 11 命令栏与标签页。"; }
@@ -420,6 +422,7 @@ public sealed class ShellSettingsWindow : Window
         Resources["AccentBrush"] = Brush(skin.Accent); Resources["SidebarBrush"] = Brush(skin.Sidebar); Resources["WorkspaceBrush"] = Brush(skin.Workspace);
         referenceButton.Content=preview.Before?"返回方案":"原生对比";
         previewCaption.Text = preview.Before ? "Windows 11 参考 · 示意" : page switch { 0 => $"{Draft.IconSize} px 图标  /  {Draft.TaskbarHeight} px 高度", 1 => Draft.ClassicRibbon ? "经典功能区 · 示意" : Draft.UseClassicNavigationBar ? "经典导航栏 · 示意" : "Windows 11 命令栏 · 示意", _ => Draft.ClassicContextMenu ? "完整菜单 · 示意" : "Windows 11 菜单 · 示意" };
+        if (page == 0 && !preview.Before && (Draft.SkipTaskbarLayout || Draft.SkipTaskbarSizing)) previewCaption.Text = "设计预览 · 部分增强未选择";
         for (int i=0; i<layoutChoices.Count; i++) layoutChoices[i].Tag = (i == 0) == Draft.StartOnLeft ? "selected" : null;
     }
     void RefreshPreviewLayout()
@@ -442,7 +445,7 @@ public sealed class ShellSettingsWindow : Window
         var defaults = ShellPresets.All[ShellPresets.Index(Draft)].Profile;
         var value = page switch
         {
-            0 => Draft with { StartOnLeft = defaults.StartOnLeft, IconSize = defaults.IconSize, TaskbarHeight = defaults.TaskbarHeight, TaskbarButtonWidth = defaults.TaskbarButtonWidth, SmallIconSize = defaults.SmallIconSize, SmallTaskbarButtonWidth = defaults.SmallTaskbarButtonWidth, OtherSystemButtonsOnLeft = defaults.OtherSystemButtonsOnLeft, StartMenuOnLeft = defaults.StartMenuOnLeft, SearchMenuOnLeft = defaults.SearchMenuOnLeft },
+            0 => Draft with { StartOnLeft = defaults.StartOnLeft, IconSize = defaults.IconSize, TaskbarHeight = defaults.TaskbarHeight, TaskbarButtonWidth = defaults.TaskbarButtonWidth, SmallIconSize = defaults.SmallIconSize, SmallTaskbarButtonWidth = defaults.SmallTaskbarButtonWidth, OtherSystemButtonsOnLeft = defaults.OtherSystemButtonsOnLeft, StartMenuOnLeft = defaults.StartMenuOnLeft, SearchMenuOnLeft = defaults.SearchMenuOnLeft, SkipTaskbarLayout = defaults.SkipTaskbarLayout, SkipTaskbarSizing = defaults.SkipTaskbarSizing },
             1 => Draft with { ClassicRibbon = defaults.ClassicRibbon, UseClassicNavigationBar = defaults.UseClassicNavigationBar },
             _ => Draft with { ClassicContextMenu = defaults.ClassicContextMenu, ClassicMenuWithCtrl = defaults.ClassicMenuWithCtrl }
         };

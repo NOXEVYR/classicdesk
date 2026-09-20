@@ -99,10 +99,10 @@ public static class ShellBackendPlanner
                 $"https://mods.windhawk.net/mods/{id}/{version}_64.dll");
         var modules = new[]
         {
-            Mod("taskbar-start-button-position", "1.3.2", "GPL-3.0", profile.StartOnLeft,
+            Mod("taskbar-start-button-position", "1.3.2", "GPL-3.0", !profile.SkipTaskbarLayout && profile.StartOnLeft,
                 ["explorer.exe", "StartMenuExperienceHost.exe"], Settings(("otherSystemButtonsOnTheLeft", profile.OtherSystemButtonsOnLeft ? "1" : "0"),
                     ("startMenuOnTheLeft", profile.StartMenuOnLeft ? "1" : "0"), ("searchMenuPositionInAllCases", profile.SearchMenuOnLeft ? "1" : "0"))),
-            Mod("taskbar-icon-size", "1.3.10", "GPL-3.0", true, ["explorer.exe"],
+            Mod("taskbar-icon-size", "1.3.10", "GPL-3.0", !profile.SkipTaskbarSizing, ["explorer.exe"],
                 Settings(("TaskbarHeight", Number(profile.TaskbarHeight)), ("IconSize", Number(profile.IconSize)),
                     ("IconSizeSmall", Number(profile.SmallIconSize)), ("TaskbarButtonWidth", Number(profile.TaskbarButtonWidth)), ("TaskbarButtonWidthSmall", Number(profile.SmallTaskbarButtonWidth)))),
             Mod("explorer-frame-classic", "1.0.8", "GPL-3.0", profile.ClassicRibbon || profile.UseClassicNavigationBar, ["explorer.exe"],
@@ -115,7 +115,7 @@ public static class ShellBackendPlanner
         if (environment.Build is null) blockers.Add("Windows 构建号未能读取，不能推断兼容性。");
         else if (environment.Build < 22000) blockers.Add("所选模块面向 Windows 11，当前 Windows 构建不满足前提。");
         if (environment.Architecture != "X64") blockers.Add("本方案只核对了 x86-64 源码，当前架构尚未支持。");
-        if (environment.NativeTaskbarAlignment != 1)
+        if (!profile.SkipTaskbarLayout && environment.NativeTaskbarAlignment != 1)
             blockers.Add("本方案的应用居中布局要求原生 TaskbarAl=1；当前未确认满足，需要独立、有归属且可恢复的 Windows 对齐事务，当前不执行。");
         if (environment.StartAllBackEvidence.Count > 0 || environment.StartAllBackLoaded == "detected")
             blockers.Add("检测到 StartAllBack：必须先审查退出/停用及恢复方案，再经明确同意切换；可能需要注销或重启 Explorer，不在此检查中执行。");

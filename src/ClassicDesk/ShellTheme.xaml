@@ -49,4 +49,29 @@
   <Style x:Key="ShellExpander" TargetType="Expander"><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="#748399"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander"><StackPanel><ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" FocusVisualStyle="{x:Null}" HorizontalContentAlignment="Left"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="Face" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="3,8"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions><Path x:Name="Arrow" Data="M0,0 L3.5,3.5 L0,7" Stroke="#7D8CA0" StrokeThickness="1.1" Width="4" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"/><ContentPresenter Grid.Column="1" Content="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#EEF2F7"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="#6AA4F0"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><Border x:Name="Body" Visibility="Collapsed" Background="White" CornerRadius="9" BorderBrush="#E1E6EE" BorderThickness="1" Margin="0,4,0,0"><ContentPresenter/></Border></StackPanel><ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="Body" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
   <Style TargetType="ScrollBar"><Setter Property="Width" Value="8"/><Setter Property="Background" Value="Transparent"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="Transparent"><Track x:Name="PART_Track" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Face" Background="#C7CFDA" CornerRadius="4" Margin="2,0"/><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#A6B3C5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter></Style>
   <Style TargetType="ToolTip"><Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="#596C84"/><Setter Property="FontFamily" Value="Microsoft YaHei UI"/><Setter Property="FontSize" Value="12"/><Setter Property="MaxWidth" Value="340"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToolTip"><Border Background="{TemplateBinding Background}" BorderBrush="#DCE5F0" BorderThickness="1" CornerRadius="7" Padding="11,8"><ContentPresenter/></Border></ControlTemplate></Setter.Value></Setter></Style>
-</ResourceDictionary>
+  <Style x:Key="ShellFeatureChoice" TargetType="CheckBox">
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="CheckBox">
+          <Border x:Name="Surface" Padding="5,3" Background="Transparent" CornerRadius="6" BorderThickness="1" BorderBrush="Transparent">
+            <Grid>
+              <Grid.ColumnDefinitions><ColumnDefinition Width="27"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+              <Border x:Name="Box" Width="18" Height="18" HorizontalAlignment="Left" VerticalAlignment="Center" CornerRadius="5" Background="White" BorderBrush="#B5C0D4" BorderThickness="1">
+                <Path x:Name="Mark" Visibility="Collapsed" Data="M0,4 L3,7 L9,0" Width="9" Height="7" Stretch="Uniform" Stroke="White" StrokeThickness="1.7" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+              </Border>
+              <ContentPresenter Grid.Column="1" Content="{TemplateBinding Content}" VerticalAlignment="Center"/>
+            </Grid>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="#F3F5FC"/></Trigger>
+            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Box" Property="Background" Value="#5663AE"/><Setter TargetName="Box" Property="BorderBrush" Value="#5663AE"/><Setter TargetName="Mark" Property="Visibility" Value="Visible"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#8995CD"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value="0.48"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  </ResourceDictionary>

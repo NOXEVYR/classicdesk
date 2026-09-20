@@ -51,6 +51,46 @@ Test("incomplete StartAllBack observation remains unknown", f => Assert(WindowsA
 Test("unrecognized module observation never grants absence", f => Assert(WindowsActivationEnvironment.ClassifyStartAllBack("")==ActivationPresence.Unknown));
 Test("owned files can restore after Explorer session changed and daemon exited", f => { var r=f.Activate(); f.Process.Running=false; f.Environment.Revision="next-session"; Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State==ShellActivationState.Restored&&f.Process.Stops==0&&f.Registry.State.Data=="0"); });
 Test("Explorer changes again after restore confirmation blocks all changes", f => { var r=f.Activate(); f.Environment.Revision="new-session"; var c=f.Core.CaptureRestoreConfirmation(r.JournalId); f.Environment.Revision="newest-session"; Assert(f.Core.Restore(c).State==ShellActivationState.ManualReview&&f.Process.Stops==0&&f.Registry.State.Data=="1"); });
+for (var mask = 0; mask < 16; mask++)
+{
+    var selection = new ShellFeatureSelection((mask & 1) != 0, (mask & 2) != 0, (mask & 4) != 0, (mask & 8) != 0);
+    Test("independent feature mapping " + mask, f => {
+        f.Profile = selection.Apply(new ShellProfile()); var c = f.Capture();
+        var expected = new Dictionary<ActivationTarget, bool> { [ActivationTarget.StartButtonMod] = selection.Layout, [ActivationTarget.IconSizeMod] = selection.Sizing, [ActivationTarget.ExplorerFrameMod] = selection.Explorer, [ActivationTarget.ContextMenuMod] = selection.ContextMenu };
+        foreach (var pair in expected) Assert(Encoding.Unicode.GetString(Convert.FromBase64String(c.Preparation.Changes.Single(x => x.Target == pair.Key).DesiredData)).Contains("Disabled=" + (pair.Value ? "0" : "1") + "\r\n"));
+        var alignment = c.Preparation.Changes.Single(x => x.Target == ActivationTarget.TaskbarAlignment);
+        Assert(alignment.DesiredData == (selection.Layout ? "1" : "0") && f.Registry.Writes == 0 && f.Process.Starts == 0);
+    });
+}
+foreach (var absent in new[] { false, true })
+    Test("menu-only activation and new-session restore preserves alignment " + absent, f => {
+        f.Profile = new ShellFeatureSelection(false, false, false, true).Apply(new());
+        if (absent) f.Registry.State = new(false, "", "original-absent");
+        var registry = f.Registry.State; var originals = f.Originals(); var r = f.Activate();
+        Assert(r.State == ShellActivationState.Active && f.Registry.State == registry && f.Registry.Writes == 0);
+        var journal = JsonSerializer.Deserialize<ActivationJournal>(File.ReadAllText(Path.Combine(f.Logs, r.JournalId.ToString("N") + ".json")))!;
+        Assert(journal.Profile.SkipTaskbarLayout && journal.Profile.SkipTaskbarSizing && journal.Steps.Single(s => s.Change.Target == ActivationTarget.TaskbarAlignment).WritePhase == "unchanged");
+        var core = new ShellActivationCoordinator(new WindowsShellActivationHost(f.Registry, f.Environment, f.Process), new FileActivationJournalStore(f.Logs));
+        Assert(core.Restore(core.CaptureRestoreConfirmation(r.JournalId)).State == ShellActivationState.Restored);
+        Assert(f.Registry.State == registry && f.Registry.Writes == 0 && originals.All(p => File.ReadAllBytes(p.Key).SequenceEqual(p.Value)));
+    });
+Test("layout-only activation keeps size and Explorer modules disabled then restores", f => {
+    f.Profile = new ShellFeatureSelection(true, false, false, false).Apply(new()); var originals = f.Originals();
+    var r = f.Activate(); Assert(r.State == ShellActivationState.Active && f.Registry.State.Data == "1");
+    foreach (var id in new[] { "taskbar-icon-size", "explorer-frame-classic", "explorer-context-menu-classic" }) Assert(File.ReadAllText(Path.Combine(f.PackageRoot, "AppData/Engine/Mods", id + ".ini")).Contains("Disabled=1\r\n"));
+    Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State == ShellActivationState.Restored && f.Registry.State.Data == "0");
+    Assert(originals.All(p => File.ReadAllBytes(p.Key).SequenceEqual(p.Value)));
+});
+Test("menu-only final alignment drift still blocks launch", f => {
+    f.Profile = new ShellFeatureSelection(false, false, false, true).Apply(new());
+    f.Process.BeforeStart = () => f.Registry.State = f.Registry.State with { Revision = "external-alignment" };
+    var r = f.Activate(); Assert(r.State == ShellActivationState.ManualReview && f.Process.Starts == 0 && f.Registry.Writes == 0);
+});
+Test("legacy profiles omit default scope fields to retain journal fingerprints", f => {
+    var text = JsonSerializer.Serialize(new ShellProfile()); Assert(!text.Contains("SkipTaskbar"));
+    var old = JsonSerializer.Deserialize<ShellProfile>(text)!; Assert(!old.SkipTaskbarLayout && !old.SkipTaskbarSizing);
+    var modified = old with { SkipTaskbarLayout = true }; Assert(JsonSerializer.Deserialize<ShellProfile>(JsonSerializer.Serialize(modified)) == modified);
+});
 var failures=checks.Count(x=>!(bool)x.GetType().GetProperty("passed")!.GetValue(x)!);
 var source=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../src/ClassicDesk/ShellActivationHost.cs"));
 var report=new { passed=checks.Count-failures,failed=failures,realRegistryWrites=0,realProcessStarts=0,realProcessStops=0,realWindowInteractions=0,testMode="real isolated package files; injected fake registry/environment/process only",sourceSha256=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))),checks };

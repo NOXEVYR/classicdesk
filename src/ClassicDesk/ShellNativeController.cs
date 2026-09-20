@@ -14,7 +14,7 @@ public sealed class ShellNativeController : IShellNativeController
     readonly IActivationHost host;
     readonly ShellActivationCoordinator coordinator;
     readonly SemaphoreSlim gate = new(1, 1);
-    // First live milestone: retain the saved proposal, apply only taskbar modules.
+    // Default review scope remains taskbar-only; the panel can opt into other features.
     public static ShellProfile TaskbarOnly(ShellProfile proposal)
     {
         ArgumentNullException.ThrowIfNull(proposal); proposal.Validate();
@@ -57,7 +57,7 @@ public sealed class ShellNativeController : IShellNativeController
 
     ShellNativeReview Review(ShellProfile profile)
     {
-        profile = TaskbarOnly(profile);
+        ArgumentNullException.ThrowIfNull(profile); profile.Validate();
         var pending = PendingRecords();
         if (!Directory.Exists(packageRoot) && pending.Length != 0)
             return new("有未完成的恢复记录，增强组件缺失",
@@ -77,13 +77,18 @@ public sealed class ShellNativeController : IShellNativeController
             var ticket = coordinator.CaptureRestoreConfirmation(journal.Id);
             return new("已有方案正在使用", "先恢复上次方案，再启用新方案。恢复只处理本工具确认拥有、且未被外部修改的设置。", CanRestore: true, RestoreTicket: ticket);
         }
+        var modules = ShellBackendPlanner.CreatePlan(profile, new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", [])).Modules.Where(m => m.Selected).ToArray();
+        if (modules.Length == 0)
+            return new("未选择增强功能", "请勾选需要的增强。仅选择原生居中布局或 Windows 11 原生样式时，不启动后台引擎；可在 Windows 设置中调整原生对齐。");
         var preparation = host.Inspect(check.Package, profile);
         if (preparation.Guards.StartAllBack != ActivationPresence.Absent)
-            return new("现有桌面组件尚未退出", "检测到 StartAllBack，或无法完整核对其运行状态。请先停用它，再回到这里检查。若已勾选停用但仍提示组件加载，请保存工作，按 StartAllBack 的提示注销并重新登录；仅重启资源管理器可能不足。ClassicDesk 不会自动关闭它或注销系统。");
+            return new("现有桌面组件尚未退出", "检测到 StartAllBack 仍被 Explorer 加载，或无法完整核对其运行状态。停用勾选不等于组件已经卸载；即使已重启，也需要以重新检查结果为准。当前保留原桌面，不并行启用增强，也不会自动注销或重启系统。");
         if (preparation.Guards.OtherWindhawk != ActivationPresence.Absent)
             return new("已有增强引擎正在运行", "检测到另一个 Windhawk 实例，当前不能并行启动。请先处理已有实例，再检查此方案。");
         var confirmation = coordinator.CaptureConfirmation(check.Package, profile);
-        return new("可以开始任务栏试用", "本次仅启用任务栏布局和尺寸；资源管理器与右键菜单选项仍保留在方案中，不在本次应用。启用会备份当前任务栏对齐和本包设置，再启动后台增强引擎；不会重启资源管理器。实际效果及整体占用仍需测试。", CanEnable: true, EnableTicket: confirmation);
+        return new("所选功能可以试用", $"本次按勾选启用 {modules.Length} 个增强模块，其余模块保持停用。" +
+            (profile.SkipTaskbarLayout ? "保留当前任务栏对齐。" : "任务栏对齐将设为应用居中，并保存原值。") +
+            "\n启用前备份本包设置；恢复会撤销本次组合。不会重启资源管理器。实际效果及整体占用尚未实机验收。", CanEnable: true, EnableTicket: confirmation);
     }
     ActivationJournal[] PendingRecords()
     {

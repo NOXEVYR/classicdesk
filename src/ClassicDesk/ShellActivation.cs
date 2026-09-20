@@ -430,8 +430,13 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
             ValidateValue(change.Target, change.Before.Exists, change.Before.Data); ValidateValue(change.Target, change.DesiredExists, change.DesiredData);
             // Both supported layouts keep application buttons centered. StartOnLeft
             // only controls the extra mod; alignment remains a separately owned write.
-            if (change.Target == ActivationTarget.TaskbarAlignment && (!change.DesiredExists || change.DesiredData != "1"))
-                throw new InvalidDataException("两种布局均需明确、独立且可恢复的 TaskbarAl=1 对齐计划。");
+            if (change.Target == ActivationTarget.TaskbarAlignment)
+            {
+                if (profile.SkipTaskbarLayout && !SameValue(change.Before, change.DesiredExists, change.DesiredData))
+                    throw new InvalidDataException("未选择任务栏布局时必须保留原始对齐值。");
+                if (!profile.SkipTaskbarLayout && (!change.DesiredExists || change.DesiredData != "1"))
+                    throw new InvalidDataException("两种布局均需明确、独立且可恢复的 TaskbarAl=1 对齐计划。");
+            }
         }
     }
     static void ValidateValue(ActivationTarget target, bool exists, string data)

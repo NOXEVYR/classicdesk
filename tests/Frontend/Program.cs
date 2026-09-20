@@ -266,9 +266,45 @@ internal static class FrontendChecks
             Require(operations.Calls == 0, "构造面板触发了系统检查。");
             Await(panel.RefreshAsync());
             Require(operations.Received == ShellNativeController.TaskbarOnly(proposal) && proposal.ClassicRibbon && proposal.ClassicContextMenu, "试用范围不符或修改了完整方案。");
-            Require(Logical<TextBlock>(panel).Count(t => t.Text == "本次不应用 · 方案选项保留") == 2, "未明确标示未应用的两个模块。");
+            Require(!panel.Selection.Explorer && !panel.Selection.ContextMenu && Logical<CheckBox>(panel).Count() == 4, "首次打开不应默认勾选资源管理器或菜单。");
             Require(!panel.EnableAvailable && !panel.RestoreAvailable, "没有有效结果时启用了操作按钮。");
             Capture(panel, 620, 550, "任务栏试用-范围核对-620x550.png"); Bounds(panel, 620, 550);
+        });
+        Check("功能组合逐项传入检查，修改勾选使旧确认失效", () =>
+        {
+            var proposal = new ShellProfile(ClassicRibbon: false, UseClassicNavigationBar: true, Skin: "moon");
+            var operations = new TaskbarReviewProbe { AllowEnable = true };
+            var panel = new ShellNativePanel(proposal, operations); Windows.Add(panel); Await(panel.RefreshAsync());
+            Require(panel.EnableAvailable, "有效检查未开启试用按钮。");
+            CheckBox Feature(string name) => Logical<CheckBox>(panel).Single(c => AutomationProperties.GetAutomationId(c) == "native-feature-" + name);
+            Feature("layout").IsChecked = false; Feature("sizing").IsChecked = false;
+            Feature("explorer").IsChecked = true; Feature("menu").IsChecked = true;
+            Require(!panel.EnableAvailable && !panel.RestoreAvailable && operations.Calls == 1, "勾选触发检查或沿用了旧确认。");
+            Await(panel.EnableAsync()); Require(operations.Enables == 0, "旧确认仍可调用启用。");
+            Await(panel.RefreshAsync());
+            Require(operations.Received is { SkipTaskbarLayout: true, SkipTaskbarSizing: true, UseClassicNavigationBar: true, ClassicContextMenu: true }, "非任务栏组合被裁掉或仍启用任务栏。");
+            Require(proposal is { SkipTaskbarLayout: false, SkipTaskbarSizing: false, UseClassicNavigationBar: true }, "原草稿被修改。");
+            Capture(panel, 660, 650, "按需功能-菜单与导航栏-660x650.png"); Bounds(panel, 660, 650);
+            Capture(panel, 520, 460, "按需功能-最小窗口-520x460.png"); Bounds(panel, 520, 460);
+        });
+        Check("原生菜单和命令栏不提供无效增强勾选", () =>
+        {
+            var panel = new ShellNativePanel(ShellPresets.All[1].Profile, new TaskbarReviewProbe()); Windows.Add(panel);
+            Await(panel.RefreshAsync());
+            foreach (var name in new[] { "explorer", "menu" }) Require(!Logical<CheckBox>(panel).Single(c => AutomationProperties.GetAutomationId(c) == "native-feature-" + name).IsEnabled, "原生样式被当作模块增强。");
+        });
+        Check("任务栏增强开关跨页保存与导入，关闭不丢尺寸参数", () =>
+        {
+            var file = Path.Combine(run, "feature-choice.json"); var window = New(file);
+            Choice(window, "图标大小").SelectedItem = "32 px";
+            Toggle(window, "启用布局调整").IsChecked = false; Toggle(window, "启用尺寸调整").IsChecked = false;
+            window.SelectPage(1); window.SelectPage(0);
+            Require(window.Draft is { SkipTaskbarLayout: true, SkipTaskbarSizing: true, IconSize: 32 } && Toggle(window, "启用尺寸调整").IsChecked == false, "开关或参数跨页丢失。");
+            window.SaveDraft(); Require(ShellProfileFile.Import(file) == window.Draft, "开关保存/导入丢失。");
+            var panel = new ShellNativePanel(window.Draft, new TaskbarReviewProbe()); Windows.Add(panel);
+            Require(!panel.Selection.Layout && !panel.Selection.Sizing, "检查面板忽略草稿中的停用开关。");
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-reset-page"));
+            Require(!window.Draft.SkipTaskbarLayout && !window.Draft.SkipTaskbarSizing, "重置本页没有恢复开关。");
         });
         Check("布局示意卡与下拉选项双向同步", () =>
         {
@@ -552,14 +588,16 @@ internal static class FrontendChecks
     }
     sealed class TaskbarReviewProbe : IShellNativeController
     {
+        public bool AllowEnable;
+        public int Enables;
         public int Calls;
         public ShellProfile? Received;
         public Task<ShellNativeReview> ReviewAsync(ShellProfile profile)
         {
             Calls++; Received = profile;
-            return Task.FromResult(new ShellNativeReview("任务栏组件已核对", "本次仅试用任务栏布局与尺寸。实际效果和占用需要实机验证。"));
+            return Task.FromResult(new ShellNativeReview("组件已核对", "实际效果和占用需要实机验证。", CanEnable: AllowEnable));
         }
-        public Task<ActivationResult> EnableAsync(ShellNativeReview review) => throw new InvalidOperationException("测试不允许启用。");
+        public Task<ActivationResult> EnableAsync(ShellNativeReview review) { Enables++; throw new InvalidOperationException("测试不允许启用。"); }
         public Task<ActivationResult> RestoreAsync(ShellNativeReview review) => throw new InvalidOperationException("测试不允许恢复。");
     }
     static void Capture(Window window, int width, int height, string name)

@@ -21,6 +21,9 @@ public sealed class ShellNativePanel : Window
 {
     readonly IShellNativeController controller;
     readonly ShellProfile profile;
+    readonly List<CheckBox> featureChoices = [];
+    readonly TextBlock selectionSummary = Text("", 11);
+    public ShellFeatureSelection Selection { get; private set; }
     readonly TextBlock state = Text("正在检查", 16, true);
     readonly TextBlock detail = Text("", 12);
     readonly Button enable;
@@ -36,8 +39,9 @@ public sealed class ShellNativePanel : Window
 
     public ShellNativePanel(ShellProfile proposal, IShellNativeController operations)
     {
-        profile = ShellNativeController.TaskbarOnly(proposal); controller = operations;
-        Title = "ClassicDesk · 启用与恢复"; Width = 620; Height = 550; MinWidth = 520; MinHeight = 460;
+        proposal.Validate(); profile = proposal; controller = operations;
+        Selection = new(Layout: !profile.SkipTaskbarLayout, Sizing: !profile.SkipTaskbarSizing);
+        Title = "ClassicDesk · 启用与恢复"; Width = 660; Height = 650; MinWidth = 520; MinHeight = 460;
         Background = Color("#F6F7F9"); Foreground = Color("#20232A");
         FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 12; Icon = AppIcons.Get("brand");
         UseLayoutRounding = true; SnapsToDevicePixels = true; TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display); WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -48,13 +52,14 @@ public sealed class ShellNativePanel : Window
         root.RowDefinitions.Add(new() { Height = new GridLength(42) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new()); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         Content = new Border { Background = Background, BorderBrush = Color("#DDE2E9"), BorderThickness = new Thickness(1), Child = root }; root.Children.Add(Caption());
         var title = new StackPanel { Margin = new Thickness(24, 9, 24, 0) }; title.Children.Add(Text("启用原生增强", 18, true));
-        var intro = Text("先核对这次方案，再开始切换。", 11); intro.Foreground = Color("#7F8997"); intro.Margin = new Thickness(0, 5, 0, 15); title.Children.Add(intro); Grid.SetRow(title, 1); root.Children.Add(title);
+        var intro = Text("按需选择本次功能，参数沿用当前方案。", 11); intro.Foreground = Color("#7F8997"); intro.Margin = new Thickness(0, 5, 0, 15); title.Children.Add(intro); Grid.SetRow(title, 1); root.Children.Add(title);
         var body = new StackPanel { Margin = new Thickness(24, 0, 24, 12) }; var scroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; Grid.SetRow(scroll, 2); root.Children.Add(scroll);
         var summary = new StackPanel { Margin = new Thickness(14, 8, 14, 8) };
-        SummaryRow(summary, "任务栏", profile.StartOnLeft ? "开始靠左，应用居中" : "开始与应用居中");
-        SummaryRow(summary, "尺寸", $"图标 {profile.IconSize} · 栏高 {profile.TaskbarHeight} · 按钮宽 {profile.TaskbarButtonWidth} px");
-        SummaryRow(summary, "资源管理器", "本次不应用 · 方案选项保留");
-        SummaryRow(summary, "右键菜单", "本次不应用 · 方案选项保留");
+        FeatureRow(summary, "任务栏布局", profile.StartOnLeft ? "开始靠左，应用居中" : "开始与应用居中", "layout", Selection.Layout, value => Selection with { Layout = value });
+        FeatureRow(summary, "图标与尺寸", $"图标 {profile.IconSize} · 栏高 {profile.TaskbarHeight} · 按钮宽 {profile.TaskbarButtonWidth} px", "sizing", Selection.Sizing, value => Selection with { Sizing = value });
+        FeatureRow(summary, "资源管理器", profile.ClassicRibbon ? "Windows 10 功能区 · 不保留标签页" : profile.UseClassicNavigationBar ? "经典导航栏 · 保留标签页" : "Windows 11 原生样式 · 无需增强", "explorer", false, value => Selection with { Explorer = value }, profile.ClassicRibbon || profile.UseClassicNavigationBar);
+        FeatureRow(summary, "右键菜单", profile.ClassicContextMenu ? "完整菜单" + (profile.ClassicMenuWithCtrl ? " · 按 Ctrl 临时使用新版" : "") : "Windows 11 原生菜单 · 无需增强", "menu", false, value => Selection with { ContextMenu = value }, profile.ClassicContextMenu);
+        selectionSummary.Margin = new Thickness(2, 12, 2, 4); selectionSummary.Foreground = Color("#66758A"); UpdateSelectionSummary(); summary.Children.Add(selectionSummary);
         body.Children.Add(new Border { Background = Brushes.White, CornerRadius = new CornerRadius(9), BorderBrush = Color("#E1E6EE"), BorderThickness = new Thickness(1), Child = summary });
         var statusBox = new StackPanel { Margin = new Thickness(2, 20, 2, 0) }; state.FontSize = 15; statusBox.Children.Add(state); detail.Margin = new Thickness(0, 7, 0, 0); detail.Foreground = Color("#656C77"); detail.LineHeight = 20; statusBox.Children.Add(detail); body.Children.Add(statusBox);
         AutomationProperties.SetLiveSetting(state, AutomationLiveSetting.Polite);
@@ -64,7 +69,7 @@ public sealed class ShellNativePanel : Window
         refresh = Button("重新检查", () => _ = RefreshAsync()); refresh.HorizontalAlignment = HorizontalAlignment.Left; actions.Children.Add(refresh);
         var right = new StackPanel { Orientation = Orientation.Horizontal }; Grid.SetColumn(right, 1); actions.Children.Add(right);
         restore = Button("恢复原设置", () => _ = RestoreAsync()); restore.Margin = new Thickness(8, 0, 8, 0); restore.IsEnabled = false; right.Children.Add(restore);
-        enable = Button("试用任务栏", () => _ = EnableAsync()); enable.Background = Color("#337CE9"); enable.Foreground = Brushes.White; enable.BorderBrush = Color("#2C73DE"); enable.IsEnabled = false; right.Children.Add(enable);
+        enable = Button("试用所选功能", () => _ = EnableAsync()); enable.Background = Color("#337CE9"); enable.Foreground = Brushes.White; enable.BorderBrush = Color("#2C73DE"); enable.IsEnabled = false; right.Children.Add(enable);
         AutomationProperties.SetAutomationId(enable, "native-enable"); AutomationProperties.SetAutomationId(restore, "native-restore");
         Loaded += (_, _) => _ = RefreshAsync();
         Closing += (_, e) => { if (applying) { e.Cancel = true; state.Text = "正在保存切换结果"; detail.Text = "完成后即可关闭。恢复记录会保留在本机。"; } };
@@ -89,7 +94,7 @@ public sealed class ShellNativePanel : Window
         state.Text = "正在检查"; detail.Text = "核对增强组件、现有工具和恢复记录…";
         try
         {
-            var result = await controller.ReviewAsync(profile).WaitAsync(TimeSpan.FromSeconds(10));
+            var result = await controller.ReviewAsync(Selection.Apply(profile)).WaitAsync(TimeSpan.FromSeconds(10));
             if (closed || request != generation) return;
             review = result; state.Text = result.Title; detail.Text = result.Detail;
         }
@@ -113,7 +118,7 @@ public sealed class ShellNativePanel : Window
             review = null;
             state.Text = result.State switch { ShellActivationState.Active => "增强引擎已启动", ShellActivationState.Restored => "原设置已恢复", ShellActivationState.RolledBack => "切换未完成，已回退", _ => "需要检查恢复记录" };
             detail.Text = result.State switch {
-                ShellActivationState.Active => "配置与进程已回读。请检查任务栏布局与尺寸；实机效果和占用尚未验收。资源管理器与右键菜单模块保持停用。",
+                ShellActivationState.Active => "所选功能的配置与进程已回读。请检查对应的任务栏、资源管理器或菜单效果；实机效果和占用尚未验收。切换其他组合前，请先恢复本次设置。",
                 ShellActivationState.Restored => "已恢复本次事务拥有的原始设置，并确认自己的引擎退出。请检查实际桌面。",
                 _ => result.Error ?? "已保留记录，未把不确定状态当作成功。" };
             detail.Text += "\n记录：" + result.JournalId.ToString("N");
@@ -121,7 +126,29 @@ public sealed class ShellNativePanel : Window
         catch (Exception e) { review = null; state.Text = "操作未完成"; detail.Text = e.Message + "\n重新检查后再继续，当前错误不会触发自动重试。"; }
         finally { applying = false; SetBusy(false); }
     }
-    void SetBusy(bool value) { busy = value; refresh.IsEnabled = !value; enable.IsEnabled = !value && review?.CanEnable == true; restore.IsEnabled = !value && review?.CanRestore == true; }
+    void SetBusy(bool value) { busy = value; refresh.IsEnabled = !value; enable.IsEnabled = !value && review?.CanEnable == true; restore.IsEnabled = !value && review?.CanRestore == true; foreach (var choice in featureChoices) choice.IsEnabled = !value && (bool)choice.Tag; }
+    void FeatureRow(Panel parent, string name, string description, string id, bool selected, Func<bool, ShellFeatureSelection> changed, bool available = true)
+    {
+        var label = new StackPanel(); label.Children.Add(Text(name, 12, true));
+        var hint = Text(description, 11); hint.Foreground = Color("#727D8C"); hint.Margin = new Thickness(0, 4, 0, 0); label.Children.Add(hint);
+        var choice = new CheckBox { Content = label, IsChecked = selected, IsEnabled = available, Tag = available, Margin = new Thickness(1, 5, 1, 5), VerticalContentAlignment = VerticalAlignment.Center, Style = (Style)FindResource("ShellFeatureChoice") };
+        AutomationProperties.SetName(choice, name); AutomationProperties.SetAutomationId(choice, "native-feature-" + id);
+        choice.Checked += (_, _) => Changed(true); choice.Unchecked += (_, _) => Changed(false);
+        void Changed(bool value)
+        {
+            Selection = changed(value); review = null; generation++; UpdateSelectionSummary();
+            state.Text = "功能选择已更改"; detail.Text = "点击“重新检查”核对这次组合，再开始试用。原方案参数保持不变。";
+            enable.IsEnabled = restore.IsEnabled = false;
+        }
+        featureChoices.Add(choice); parent.Children.Add(choice);
+    }
+    void UpdateSelectionSummary()
+    {
+        var effective = Selection.Apply(profile);
+        var modules = (Selection.Layout && profile.StartOnLeft ? 1 : 0) + (Selection.Sizing ? 1 : 0) +
+            (effective.ClassicRibbon || effective.UseClassicNavigationBar ? 1 : 0) + (effective.ClassicContextMenu ? 1 : 0);
+        selectionSummary.Text = $"本次需要 {modules} 个增强模块 · " + (Selection.Layout ? "调整任务栏对齐" : "保留任务栏对齐") + "\n未勾选的模块保持停用；所有组合共用一个引擎。";
+    }
     static SolidColorBrush Color(string hex) => new((Color)ColorConverter.ConvertFromString(hex));
     static TextBlock Text(string value, double size, bool bold = false) => new() { Text = value, FontSize = size, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, TextWrapping = TextWrapping.Wrap };
     static Button Button(string text, Action action) { var b = new Button { Content = text, Padding = new Thickness(13, 8, 13, 8) }; b.Click += (_, _) => action(); return b; }

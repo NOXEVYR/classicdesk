@@ -108,8 +108,11 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         var guards = new ActivationGuards(observed.Revision, package.ManifestSha256, observed.StartAllBack, observed.OtherWindhawk);
         var before = Enum.GetValues<ActivationTarget>().ToDictionary(t => t, t => Read(package, t));
         var desired = DesiredFiles(profile, before);
-        return new(guards, Enum.GetValues<ActivationTarget>().Select(t => new ActivationChange(t, before[t], true,
-            t == ActivationTarget.TaskbarAlignment ? "1" : Convert.ToBase64String(desired[t]))).ToArray());
+        return new(guards, Enum.GetValues<ActivationTarget>().Select(t =>
+            t == ActivationTarget.TaskbarAlignment && profile.SkipTaskbarLayout
+                ? new ActivationChange(t, before[t], before[t].Exists, before[t].Data)
+                : new ActivationChange(t, before[t], true,
+                    t == ActivationTarget.TaskbarAlignment ? "1" : Convert.ToBase64String(desired[t]))).ToArray());
     }
     public ActivationItemState Read(VerifiedActivationPackage package, ActivationTarget target)
     {
