@@ -7,6 +7,32 @@ public static class ShellProgram
     [STAThread]
     public static int Main(string[] args)
     {
+        if ((args.Length == 4 && args[0] == "--prepare-cold-upgrade") ||
+            (args.Length == 2 && args[0] == "--apply-cold-upgrade"))
+        {
+            try
+            {
+                var journals = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassicDesk", "NativeTransactions");
+                var upgrade = new ShellColdUpgrade(new WindowsColdUpgradeHost(journals));
+                var json = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                if (args[0] == "--prepare-cold-upgrade")
+                {
+                    var ticket = upgrade.Prepare(args[1], args[2]);
+                    var path = System.IO.Path.GetFullPath(args[3]);
+                    WindowsShellActivationHost.RejectReparse(path);
+                    using var file = new System.IO.FileStream(path, System.IO.FileMode.CreateNew, System.IO.FileAccess.Write, System.IO.FileShare.None);
+                    System.Text.Json.JsonSerializer.Serialize(file, ticket, json); file.Flush(true);
+                    Console.WriteLine("切换记录已准备；未切换组件，也未配置开机启动。");
+                    return 0;
+                }
+                var bytes = WindowsShellActivationHost.ReadBounded(System.IO.Path.GetFullPath(args[1]), 1024 * 1024);
+                var saved = System.Text.Json.JsonSerializer.Deserialize<ColdUpgradeTicket>(bytes) ?? throw new System.IO.InvalidDataException("切换记录为空。");
+                var result = upgrade.Apply(saved);
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, json));
+                return result.Phase == "activated-unverified" ? 0 : 1;
+            }
+            catch (Exception e) { Console.Error.WriteLine("冷切换未完成：" + e.Message); return 1; }
+        }
         if (args.Length == 1 && args[0] == "--resume-login")
         {
             var login = ShellLoginRegistration.Current();

@@ -5,7 +5,7 @@ using System.Windows;
 namespace ClassicDesk;
 
 /// <summary>Explicit settings actions and opt-in resumption of an existing owned transaction.</summary>
-public sealed class ShellNativeController : IShellNativeController
+public sealed partial class ShellNativeController : IShellNativeController
 {
     // This manifest and every referenced asset were reviewed from the fixed official package.
     // A self-consistent replacement manifest is not trusted by this application.
