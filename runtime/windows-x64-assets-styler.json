@@ -53,15 +53,6 @@
       "sha256": "3782fcd46e372eeac0c0576aa7ba915032611a05dd3ed72d1bcfae0042199978",
       "sourceUrl": "https://raw.githubusercontent.com/ramensoftware/windhawk-mods/f3ec3675168600d1decfcda97d2a12e375903ae9/mods/windows-11-taskbar-styler.wh.cpp",
       "sourceSha256": "9d31ed760f3c5dbecf75c70cf424f05fb132b279d28f04dafb988a511fcfabce"
-    },
-    {
-      "id": "taskbar-background-helper",
-      "version": "1.2",
-      "url": "https://mods.windhawk.net/mods/taskbar-background-helper/1.2_64.dll",
-      "bytes": 148992,
-      "sha256": "66402f68723c5c1551f5c5a84ec3c9618d3dce601a466e87126a7cfd298af0c3",
-      "sourceUrl": "https://raw.githubusercontent.com/ramensoftware/windhawk-mods/f3ec3675168600d1decfcda97d2a12e375903ae9/mods/taskbar-background-helper.wh.cpp",
-      "sourceSha256": "67c0c27df717f7333d47df8b3a6662c6b2d983a351933a1dd5a07e085626f285"
     }
   ],
   "assets": [
@@ -190,13 +181,6 @@
       "sha256": "3782fcd46e372eeac0c0576aa7ba915032611a05dd3ed72d1bcfae0042199978",
       "source": "module",
       "sourcePath": "windows-11-taskbar-styler_1.9.dll"
-    },
-    {
-      "path": "AppData/Engine/Mods/64/taskbar-background-helper_1.2.dll",
-      "bytes": 148992,
-      "sha256": "66402f68723c5c1551f5c5a84ec3c9618d3dce601a466e87126a7cfd298af0c3",
-      "source": "module",
-      "sourcePath": "taskbar-background-helper_1.2.dll"
     }
   ]
 }

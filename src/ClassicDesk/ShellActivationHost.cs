@@ -40,8 +40,15 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         [ActivationTarget.IconSizeMod] = "AppData/Engine/Mods/taskbar-icon-size.ini",
         [ActivationTarget.ExplorerFrameMod] = "AppData/Engine/Mods/explorer-frame-classic.ini",
         [ActivationTarget.ContextMenuMod] = "AppData/Engine/Mods/explorer-context-menu-classic.ini",
-        [ActivationTarget.MainSettings] = "AppData/settings.ini", [ActivationTarget.EngineSettings] = "AppData/Engine/settings.ini"
+        [ActivationTarget.MainSettings] = "AppData/settings.ini", [ActivationTarget.EngineSettings] = "AppData/Engine/settings.ini",
+        [ActivationTarget.TaskbarStyleMod] = "AppData/Engine/Mods/windows-11-taskbar-styler.ini",
+        [ActivationTarget.TaskbarBackdropMod] = "AppData/Engine/Mods/taskbar-background-helper.ini"
     };
+    public const string StyleAsset = "AppData/Engine/Mods/64/windows-11-taskbar-styler_1.9.dll";
+    public const string BackdropAsset = "AppData/Engine/Mods/64/taskbar-background-helper_1.2.dll";
+    static ActivationTarget[] PackageTargets(VerifiedActivationPackage package) => Enum.GetValues<ActivationTarget>()
+        .Where(t => (t != ActivationTarget.TaskbarStyleMod || File.Exists(SafePath(package.Root, StyleAsset))) &&
+            (t != ActivationTarget.TaskbarBackdropMod || File.Exists(SafePath(package.Root, BackdropAsset)))).ToArray();
     static readonly string[] RequiredAssets = ["windhawk.exe", "windhawk-x64-helper.exe", "Engine/1.7.3/32/windhawk.dll", "Engine/1.7.3/64/windhawk.dll",
         "Engine/1.7.3/32/msdia140_windhawk.dll", "Engine/1.7.3/32/symsrv_windhawk.dll", "Engine/1.7.3/32/symsrv.yes",
         "Engine/1.7.3/64/msdia140_windhawk.dll", "Engine/1.7.3/64/symsrv_windhawk.dll", "Engine/1.7.3/64/symsrv.yes",
@@ -49,6 +56,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         "AppData/Engine/Mods/64/taskbar-start-button-position_1.3.2.dll", "AppData/Engine/Mods/64/taskbar-icon-size_1.3.10.dll",
         "AppData/Engine/Mods/64/explorer-frame-classic_1.0.8.dll", "AppData/Engine/Mods/64/explorer-context-menu-classic_1.0.2.dll"];
     string? leaseRoot; int leaseThread;
+    ActivationDaemonIdentity? stoppedDuringLease;
     public static WindowsShellActivationHost CreateForWindows() => new(new WindowsActivationAlignment(), new WindowsActivationEnvironment(), new WindowsActivationProcesses());
 
     /// <summary>Read only. Caller chooses the local package and may pin its expected manifest SHA-256.
@@ -77,7 +85,10 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
             if (seen.Count > 128 || total > 256 * 1024 * 1024) throw new InvalidDataException("资产清单超出此精简后端的范围。");
         }
         if (RequiredAssets.Any(a => !seen.Contains(a)) || executableHash is null) throw new InvalidDataException("运行包缺少必要引擎、模块或依赖。");
-        var knownModFiles = Targets.Where(p => p.Key is not (ActivationTarget.MainSettings or ActivationTarget.EngineSettings)).Select(p => p.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (seen.Contains(BackdropAsset) && !seen.Contains(StyleAsset)) throw new InvalidDataException("原生背景模块需要配套样式模块。");
+        var knownModFiles = Targets.Where(p => p.Key is not (ActivationTarget.MainSettings or ActivationTarget.EngineSettings) &&
+            (p.Key != ActivationTarget.TaskbarStyleMod || seen.Contains(StyleAsset)) &&
+            (p.Key != ActivationTarget.TaskbarBackdropMod || seen.Contains(BackdropAsset))).Select(p => p.Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var file in ContainedFiles(SafePath(root, "AppData/Engine/Mods"), true).Where(p => Path.GetExtension(p).Equals(".ini", StringComparison.OrdinalIgnoreCase)))
             if (!knownModFiles.Contains(Path.GetRelativePath(root, file).Replace('\\', '/'))) throw new InvalidDataException("存在不属于本方案的额外模块配置，拒绝启用安全模式之外的模块。");
         foreach (var folder in new[] { root, SafePath(root, "Engine"), SafePath(root, "AppData/Engine/Mods") })
@@ -99,16 +110,19 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         if (leaseRoot is not null) throw new IOException("当前宿主已持有事务 lease。");
         Validate(package); var directory = SafePath(package.Root, Metadata); Directory.CreateDirectory(directory); RejectReparse(directory);
         var file = new FileStream(SafePath(package.Root, Metadata + "/package.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-        leaseRoot = package.Root; leaseThread = Environment.CurrentManagedThreadId;
-        return new ActionLease(() => { leaseRoot = null; leaseThread = 0; file.Dispose(); });
+        leaseRoot = package.Root; leaseThread = Environment.CurrentManagedThreadId; stoppedDuringLease = null;
+        return new ActionLease(() => { leaseRoot = null; leaseThread = 0; stoppedDuringLease = null; file.Dispose(); });
     }
     public ActivationPreparation Inspect(VerifiedActivationPackage package, ShellProfile profile, ActivationDaemonIdentity? allowedDaemon = null)
     {
         Validate(package); profile.Validate(); var observed = environment.Inspect(allowedDaemon);
         var guards = new ActivationGuards(observed.Revision, package.ManifestSha256, observed.StartAllBack, observed.OtherWindhawk);
-        var before = Enum.GetValues<ActivationTarget>().ToDictionary(t => t, t => Read(package, t));
+        var targets = PackageTargets(package);
+        if ((profile.CompactTray || profile.TranslucentTaskbar) && !targets.Contains(ActivationTarget.TaskbarStyleMod))
+            throw new InvalidDataException("此运行包未包含半透明和紧凑托盘组件，请使用新版运行包。");
+        var before = targets.ToDictionary(t => t, t => Read(package, t));
         var desired = DesiredFiles(profile, before);
-        return new(guards, Enum.GetValues<ActivationTarget>().Select(t =>
+        return new(guards, targets.Select(t =>
             t == ActivationTarget.TaskbarAlignment && profile.SkipTaskbarLayout
                 ? new ActivationChange(t, before[t], before[t].Exists, before[t].Data)
                 : new ActivationChange(t, before[t], true,
@@ -157,7 +171,8 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         void VerifyFinal()
         {
             Guard(package, guards);
-            if (frozen.Count != 7 || Enum.GetValues<ActivationTarget>().Any(t => !frozen.ContainsKey(t))) throw new InvalidDataException("启动必须提供完整七目标冻结后态。");
+            var targets = PackageTargets(package);
+            if (frozen.Count != targets.Length || targets.Any(t => !frozen.ContainsKey(t))) throw new InvalidDataException("启动必须提供此运行包的完整目标冻结后态。");
             foreach (var pair in frozen) if (Read(package, pair.Key) != pair.Value) throw new InvalidOperationException("启动提交前配置或 TaskbarAl 已偏离确认后的归属状态。");
         }
         VerifyFinal();
@@ -191,6 +206,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
             if (processes.Inspect(identity) != ActivationDaemonHealth.OwnedProcessExited) return new(ActivationOutcome.Unknown, "进程退出未确认。");
             ReplaceOwnedFile(SafePath(root, Metadata + "/daemon-" + identity.OwnershipToken + ".json"),
                 JsonSerializer.SerializeToUtf8Bytes(new ProcessOwnership(identity.OwnershipToken, guards.PackageRevision, "stopped", identity)));
+            stoppedDuringLease = identity;
         }
         return result;
     }
@@ -200,7 +216,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         var unknown = new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", []);
         var plan = ShellBackendPlanner.CreatePlan(profile, unknown);
         var output = new Dictionary<ActivationTarget, byte[]>();
-        foreach (var pair in Targets.Where(p => p.Key is not (ActivationTarget.MainSettings or ActivationTarget.EngineSettings)))
+        foreach (var pair in Targets.Where(p => before.ContainsKey(p.Key) && p.Key is not (ActivationTarget.MainSettings or ActivationTarget.EngineSettings)))
         {
             var id = Path.GetFileNameWithoutExtension(pair.Value); var mod = plan.Modules.Single(m => m.Id == id);
             // Deterministic while the original file is unchanged, so review fingerprints don't drift with wall clock time.
@@ -263,6 +279,11 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
     }
     ActivationDaemonIdentity? AllowedProcess(VerifiedActivationPackage package)
     {
+        // The confirmed process can exit before its Explorer modules finish
+        // unloading. Keep only this lease's stopped identity for restore guards;
+        // an unrelated process or another runtime's DLL still fails inspection.
+        if (stoppedDuringLease is not null && SamePath(stoppedDuringLease.ExecutablePath, package.ExecutablePath) &&
+            InspectDaemon(stoppedDuringLease) == ActivationDaemonHealth.OwnedProcessExited) return stoppedDuringLease;
         var directory = SafePath(package.Root, Metadata);
         if (!Directory.Exists(directory)) return null;
         var candidates = Directory.GetFiles(directory, "daemon-*.json").Select(p => JsonSerializer.Deserialize<ProcessOwnership>(ReadBounded(p, 65536)))

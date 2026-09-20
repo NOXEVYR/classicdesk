@@ -8,6 +8,51 @@ using System.Text.Json;
 
 namespace ClassicDesk;
 
+public static class ShellTaskbarStyle
+{
+    public static Dictionary<string, string> BackdropSettings() => new()
+    {
+        ["backgroundStyle"] = "blur", ["color.red"] = "0", ["color.green"] = "0", ["color.blue"] = "0",
+        ["color.accentColor"] = "0", ["color.transparency"] = "24", ["onlyWhenMaximized"] = "0", ["styleForDarkMode.use"] = "0"
+    };
+    public static Dictionary<string, string> Settings(bool compact, bool translucent)
+    {
+        var values = new Dictionary<string, string> { ["theme"] = "", ["clickThroughTaskbar"] = "0", ["xamlDiagnosticsHandling"] = "allow" };
+        int index = 0;
+        void Style(string target, params string[] styles)
+        {
+            values[$"controlStyles[{index}].target"] = target;
+            for (int i = 0; i < styles.Length; i++) values[$"controlStyles[{index}].styles[{i}]"] = styles[i];
+            index++;
+        }
+        if (translucent)
+        {
+            Style("Taskbar.TaskbarBackground#BackgroundControl", "Opacity=0");
+            Style("Rectangle#BackgroundFill", "Fill=Transparent", "Opacity=0");
+            Style("Rectangle#BackgroundStroke", "Fill=Transparent");
+            Style("Grid#IconPanel@RunningIndicatorStates > Rectangle#RunningIndicator, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Rectangle#RunningIndicator", "Width=28", "Height=2", "RadiusX=0", "RadiusY=0", "Fill=#00A8E8");
+        }
+        if (compact)
+        {
+            Style("SystemTray.ChevronIconView", "Padding=0", "MinWidth=20");
+            // Let the content measure itself: a fixed outer width clips the
+            // image's own padded grid, and can truncate language indicators.
+            Style("SystemTray.NotifyIconView#NotifyItemIcon", "Padding=0", "MinWidth=20", "Width=Auto");
+            Style("SystemTray.NotifyIconView#NotifyItemIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.ImageIconContent > Grid#ContainerGrid", "Padding=0");
+            Style("SystemTray.NotifyIconView#NotifyItemIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=0");
+            Style("SystemTray.LanguageTextIconContent", "Width=Auto", "MinWidth=20");
+            Style("SystemTray.IconView#SystemTrayIcon", "Padding=0", "MinWidth=20");
+            Style("SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=2,0,2,0");
+            Style("SystemTray.OmniButton", "Padding=0");
+            Style("SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=2,0,2,0");
+            Style("SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", "Padding=4,0,4,0");
+            Style("SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", "Padding=0");
+            Style("SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", "Padding=0");
+        }
+        return values;
+    }
+}
+
 public sealed record BackendConfigurationFile(string RelativePath, long Bytes, string Sha256);
 public sealed record DisabledBackendConfiguration(string Directory, string ManifestPath, string PackageId,
     IReadOnlyList<BackendConfigurationFile> Files, bool EngineStarted = false, bool HostSettingsChanged = false);
@@ -28,7 +73,9 @@ public static class ShellBackendConfig
             ["taskbar-start-button-position"] = ("1.3.2", ["explorer.exe", "StartMenuExperienceHost.exe"]),
             ["taskbar-icon-size"] = ("1.3.10", ["explorer.exe"]),
             ["explorer-frame-classic"] = ("1.0.8", ["explorer.exe"]),
-            ["explorer-context-menu-classic"] = ("1.0.2", ["explorer.exe"])
+            ["explorer-context-menu-classic"] = ("1.0.2", ["explorer.exe"]),
+            ["windows-11-taskbar-styler"] = ("1.9", ["explorer.exe"]),
+            ["taskbar-background-helper"] = ("1.2", ["explorer.exe"])
         };
 
     public static string GetLibraryFileName(ShellModPlan plan)
@@ -75,8 +122,9 @@ public static class ShellBackendConfig
         // Obtain module mapping without probing or changing the host environment.
         var unprobed = new ShellBackendEnvironment(DateTime.UtcNow, "unknown", null, null, null, [], [], [], [], "unknown", []);
         var plan = ShellBackendPlanner.CreatePlan(profile, unprobed, root);
-        var mods = plan.Modules.Where(m => Supported.ContainsKey(m.Id)).ToArray();
-        if (mods.Length != Supported.Count) throw new InvalidDataException("四个固定模块的计划不完整。");
+        var styled = profile.CompactTray || profile.TranslucentTaskbar;
+        var mods = plan.Modules.Where(m => Supported.ContainsKey(m.Id) && (styled || m.Id is not ("windows-11-taskbar-styler" or "taskbar-background-helper"))).ToArray();
+        if (mods.Length != (styled ? 6 : 4)) throw new InvalidDataException("固定模块的计划不完整。");
         var created = DateTimeOffset.UtcNow;
         var texts = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -137,7 +185,7 @@ public static class ShellBackendConfig
     {
         ArgumentNullException.ThrowIfNull(plan);
         if (!Supported.TryGetValue(plan.Id, out var expected) || plan.Version != expected.Version)
-            throw new InvalidDataException("只接受四个固定版本模块，不能生成任意模块配置。");
+            throw new InvalidDataException("只接受已核对的固定版本模块，不能生成任意模块配置。");
         if (plan.Targets.Count != expected.Targets.Length ||
             !plan.Targets.ToHashSet(StringComparer.Ordinal).SetEquals(expected.Targets))
             throw new InvalidDataException("模块进程范围与固定源码不一致。");
@@ -145,6 +193,22 @@ public static class ShellBackendConfig
 
     static void ValidateSettings(string id, Dictionary<string, string> values)
     {
+        if (id == "windows-11-taskbar-styler")
+        {
+            // Only the four product-owned combinations are accepted, never arbitrary XAML.
+            if (!(new[] { false, true }).Any(compact => (new[] { false, true }).Any(translucent =>
+                ShellTaskbarStyle.Settings(compact, translucent) is var expected && expected.Count == values.Count &&
+                expected.All(p => values.TryGetValue(p.Key, out var value) && value == p.Value))))
+                throw new InvalidDataException("任务栏样式必须是已核对的内置组合。");
+            return;
+        }
+        if (id == "taskbar-background-helper")
+        {
+            var expected = ShellTaskbarStyle.BackdropSettings();
+            if (values.Count != expected.Count || expected.Any(p => !values.TryGetValue(p.Key, out var value) || value != p.Value))
+                throw new InvalidDataException("原生背景只接受已核对的静态半透明配置。");
+            return;
+        }
         string[] keys = id switch
         {
             "taskbar-start-button-position" => ["otherSystemButtonsOnTheLeft", "startMenuOnTheLeft", "searchMenuPositionInAllCases"],

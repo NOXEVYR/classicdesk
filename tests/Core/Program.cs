@@ -25,7 +25,7 @@ Test("restore owned daemon then reverse seven writes with durable intent", f =>
 {
     var r = f.Activate(); var restore = f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId));
     Check(restore.State == ShellActivationState.Restored && f.Host.Stops == 1 && f.Host.Restores == 7);
-    Check(f.Host.RestoreOrder.SequenceEqual(Enum.GetValues<ActivationTarget>().Reverse()));
+    Check(f.Host.RestoreOrder.SequenceEqual(Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings).Reverse()));
     Check(f.Host.States.All(p => p.Value.Data == f.Host.Original[p.Key].Data));
     Check(f.Journal().Steps.All(s => s.RestorePhase == "confirmed") && f.Host.IntentChecks == 16);
 });
@@ -45,7 +45,7 @@ Test("all-centered profile independently journals alignment 0 to 1", f =>
 });
 Test("already desired values create no ownership or rollback writes", f =>
 {
-    foreach (var t in Enum.GetValues<ActivationTarget>()) f.Host.States[t] = new(true, FakeHost.Desired(t), "already-" + t);
+    foreach (var t in Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings)) f.Host.States[t] = new(true, FakeHost.Desired(t), "already-" + t);
     var r = f.Activate(); Check(f.Host.Writes == 0 && f.Journal().Steps.All(s => s.WritePhase == "unchanged"));
     Check(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State == ShellActivationState.Restored && f.Host.Restores == 0);
 });
@@ -54,14 +54,14 @@ foreach (var presence in new[] { ActivationPresence.Present, ActivationPresence.
     Test("StartAllBack " + presence + " blocks before journal", f => { f.Host.Sab = presence; Reject(() => f.Activate()); Check(f.Host.Writes == 0 && !Directory.Exists(f.LogDirectory)); });
     Test("other Windhawk " + presence + " blocks before journal", f => { f.Host.Other = presence; Reject(() => f.Activate()); Check(f.Host.Writes == 0); });
 }
-foreach (var target in Enum.GetValues<ActivationTarget>())
+foreach (var target in Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings))
     Test("stale confirmation rejects " + target, f => { var c = f.Capture(); f.Host.External(target); Reject(() => f.Core.Activate(c)); Check(f.Host.Writes == 0 && !f.Host.Leased); });
 Test("environment revision drift rejects stale confirmation", f => { var c = f.Capture(); f.Host.EnvironmentRevision = "changed"; Reject(() => f.Core.Activate(c)); Check(f.Host.Writes == 0); });
 Test("package revision drift rejected", f => { f.Host.PackageRevision = new('B', 64); Reject(() => f.Activate()); Check(f.Host.Writes == 0); });
 Test("malformed hash rejected before host inspect", f => { f.Package = f.Package with { ManifestSha256 = "bad" }; Reject(() => f.Activate()); Check(f.Host.Inspections == 0); });
 Test("normalized executable path cannot escape package", f => { f.Package = f.Package with { ExecutablePath = Path.Combine(f.Package.Root, "..", "foreign.exe") }; Reject(() => f.Activate()); Check(f.Host.Inspections == 0); });
 Test("confirmation mutation rejected before package lease", f => { var c = f.Capture(); c.Preparation.Changes[1] = c.Preparation.Changes[1] with { DesiredData = FakeHost.B64("tampered") }; Reject(() => f.Core.Activate(c)); Check(f.Host.Writes == 0 && f.Host.LeaseAcquisitions == 0); });
-foreach (var target in Enum.GetValues<ActivationTarget>())
+foreach (var target in Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings))
     Test("definite write refusal compensates only previous owned steps " + target, f =>
     {
         f.Host.FailTarget = target; f.Host.WriteBehavior = "reject"; var r = f.Activate();
@@ -279,7 +279,7 @@ sealed class FakeHost : IActivationHost
     public FakeHost(string logDirectory)
     {
         logs = logDirectory;
-        foreach (var t in Enum.GetValues<ActivationTarget>()) States[t] = new(true, t == ActivationTarget.TaskbarAlignment ? "0" : B64("original:" + t), "initial:" + t);
+        foreach (var t in Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings)) States[t] = new(true, t == ActivationTarget.TaskbarAlignment ? "0" : B64("original:" + t), "initial:" + t);
         Original = new(States);
     }
     public static string B64(string value) => Convert.ToBase64String(Encoding.Unicode.GetBytes(value));
@@ -290,7 +290,7 @@ sealed class FakeHost : IActivationHost
     {
         Inspections++;
         var other = Other != ActivationPresence.Absent ? Other : Running && allowedDaemon != Identity ? ActivationPresence.Present : ActivationPresence.Absent;
-        return new(new(EnvironmentRevision, PackageRevision, Sab, other), Enum.GetValues<ActivationTarget>().Select(t => new ActivationChange(t, States[t], true, Desired(t))).ToArray());
+        return new(new(EnvironmentRevision, PackageRevision, Sab, other), Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings).Select(t => new ActivationChange(t, States[t], true, Desired(t))).ToArray());
     }
     public ActivationItemState Read(VerifiedActivationPackage package, ActivationTarget target) => States[target];
     void CommitGuard(ActivationGuards guards)

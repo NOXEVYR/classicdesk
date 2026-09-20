@@ -44,6 +44,7 @@ Test("unstable shell never reaches resume", f => { var l=Login(f); l.SetEnabled(
 Test("disabled login ignores an old successful report", f => { var l=Login(f); l.SetEnabled(true); l.Report("已确认运行","old"); l.SetEnabled(false); int calls=0; Assert(l.RunOnceAsync(()=> { calls++; return Task.FromResult("unexpected"); },()=>Task.CompletedTask).GetAwaiter().GetResult()==0&&calls==0); });
 Test("capture is read only and desired INI preserves BOM", f => { var c=f.Capture(); Assert(c.Preparation.Changes.Length==7 && !Directory.Exists(f.Logs)); foreach(var change in c.Preparation.Changes.Skip(1)) { var b=Convert.FromBase64String(change.DesiredData); Assert(b[0]==255 && b[1]==254); } });
 Test("real file writes fake registry and process activate then restore exact bytes", f => { var originals=f.Originals(); var r=f.Activate(); Assert(r.State==ShellActivationState.Active && f.Registry.Writes==1 && f.Process.Starts==1); Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State==ShellActivationState.Restored); Assert(f.Registry.State.Data=="0" && f.Process.Stops==1); Assert(originals.All(p=>File.ReadAllBytes(p.Key).SequenceEqual(p.Value))); });
+Test("owned modules still unloading after daemon exit do not interrupt restore", f => { var original=f.Originals(); f.Environment.RequireStoppedIdentity=true; var active=f.Activate(); Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(active.JournalId)).State==ShellActivationState.Restored); Assert(f.Process.Stops==1&&original.All(p=>File.ReadAllBytes(p.Key).SequenceEqual(p.Value))); });
 Test("recreated host restores saved ownership after process restart", f => { var r=f.Activate(); var host=new WindowsShellActivationHost(f.Registry,f.Environment,f.Process); var core=new ShellActivationCoordinator(host,new FileActivationJournalStore(f.Logs)); Assert(core.Restore(core.CaptureRestoreConfirmation(r.JournalId)).State==ShellActivationState.Restored); });
 Test("three complete activation restore cycles ignore old stopped records", f => { for(var i=0;i<3;i++) { var r=f.Activate(); Assert(r.State==ShellActivationState.Active); Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State==ShellActivationState.Restored); } Assert(f.Process.Starts==3&&f.Process.Stops==3&&f.Registry.Writes==6); });
 Test("expanded profile maps all exact mod parameters", f => { f.Profile=new(StartOnLeft:true,IconSize:28,TaskbarHeight:56,ClassicRibbon:false,ClassicContextMenu:true,TaskbarButtonWidth:60,SmallIconSize:20,SmallTaskbarButtonWidth:40,OtherSystemButtonsOnLeft:false,StartMenuOnLeft:false,SearchMenuOnLeft:true,ClassicMenuWithCtrl:false,UseClassicNavigationBar:true); var c=f.Capture(); string Text(ActivationTarget t)=>Encoding.Unicode.GetString(Convert.FromBase64String(c.Preparation.Changes.Single(x=>x.Target==t).DesiredData)); Assert(Text(ActivationTarget.IconSizeMod).Contains("TaskbarButtonWidth=60")&&Text(ActivationTarget.IconSizeMod).Contains("IconSizeSmall=20")); Assert(Text(ActivationTarget.StartButtonMod).Contains("otherSystemButtonsOnTheLeft=0")&&Text(ActivationTarget.StartButtonMod).Contains("searchMenuPositionInAllCases=1")); Assert(Text(ActivationTarget.ExplorerFrameMod).Contains("explorerStyle=classicNavigationBar")&&Text(ActivationTarget.ContextMenuMod).Contains("overrideWithCtrl=0")); });
@@ -125,6 +126,47 @@ Test("legacy profiles omit default scope fields to retain journal fingerprints",
     var old = JsonSerializer.Deserialize<ShellProfile>(text)!; Assert(!old.SkipTaskbarLayout && !old.SkipTaskbarSizing);
     var modified = old with { SkipTaskbarLayout = true }; Assert(JsonSerializer.Deserialize<ShellProfile>(JsonSerializer.Serialize(modified)) == modified);
 });
+Test("legacy runtime rejects requested styling before any writes", f => {
+    f.Profile = f.Profile with { TranslucentTaskbar = true }; Reject(()=>f.Capture()); Assert(f.Registry.Writes==0&&f.Process.Starts==0);
+});
+foreach (var compact in new[]{false,true}) foreach(var translucent in new[]{false,true})
+Test("optional style owns and restores eighth target " + compact + translucent, f => {
+    f.AddStyle(); f.Profile = f.Profile with { CompactTray=compact, TranslucentTaskbar=translucent };
+    var capture=f.Capture(); Assert(capture.Preparation.Changes.Length==8);
+    var style=capture.Preparation.Changes.Single(c=>c.Target==ActivationTarget.TaskbarStyleMod);
+    var text=Encoding.Unicode.GetString(Convert.FromBase64String(style.DesiredData));
+    Assert(text.Contains("Disabled="+((compact||translucent)?"0":"1")) && text.Contains("Rectangle#BackgroundFill")==translucent && text.Contains("NotifyItemIcon")==compact);
+    var r=f.Core.Activate(capture); Assert(r.State==ShellActivationState.Active);
+    f.Process.Running=false; var resumed=f.Core.Resume(f.Core.CaptureResumeConfirmation(r.JournalId)); Assert(resumed.State==ShellActivationState.Active);
+    Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State==ShellActivationState.Restored);
+    Assert(!File.Exists(Path.Combine(f.PackageRoot,"AppData/Engine/Mods/windows-11-taskbar-styler.ini")));
+});
+Test("style file without reviewed asset is rejected", f => {
+    File.WriteAllText(Path.Combine(f.PackageRoot,"AppData/Engine/Mods/windows-11-taskbar-styler.ini"),"[Mod]\nDisabled=1"); Reject(()=>f.Check());
+});
+Test("disabled removed launcher permits installation migration", f => {
+    var login=Login(f); login.SetEnabled(true); login.SetEnabled(false);
+    var folder=Path.GetDirectoryName(f.Logs)!; var exe=Path.Combine(folder,"new.exe"); File.WriteAllText(exe,"stub");
+    var next=new ShellLoginRegistration(Path.Combine(folder,"login"),Path.Combine(folder,"startup"),exe,f.PackageRoot+"-new");
+    next.SetEnabled(true); Assert(next.Enabled); Reject(()=>login.SetEnabled(false));
+});
+Test("legacy serialization omits style defaults and scopes remove styles", f => {
+    var text=JsonSerializer.Serialize(new ShellProfile()); Assert(!text.Contains("CompactTray")&&!text.Contains("TranslucentTaskbar"));
+    var draft=new ShellProfile(CompactTray:true,TranslucentTaskbar:true); var scoped=new ShellFeatureSelection(false).Apply(draft);
+    Assert(!scoped.CompactTray&&!scoped.TranslucentTaskbar&&draft.CompactTray&&draft.TranslucentTaskbar);
+});
+foreach(var translucent in new[]{false,true})
+Test("native background ninth target apply resume restore " + translucent, f => {
+ f.AddStyle();f.AddBackdrop();f.Profile=f.Profile with {TranslucentTaskbar=translucent,CompactTray=true};
+ var capture=f.Capture();Assert(capture.Preparation.Changes.Length==9);
+ var text=Encoding.Unicode.GetString(Convert.FromBase64String(capture.Preparation.Changes.Single(c=>c.Target==ActivationTarget.TaskbarBackdropMod).DesiredData));
+ Assert(text.Contains("Disabled="+(translucent?"0":"1"))&&text.Contains("onlyWhenMaximized=0")&&text.Contains("color.transparency=24"));
+ var result=f.Core.Activate(capture);Assert(result.State==ShellActivationState.Active);f.Process.Running=false;
+ Assert(f.Core.Resume(f.Core.CaptureResumeConfirmation(result.JournalId)).State==ShellActivationState.Active);
+ Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(result.JournalId)).State==ShellActivationState.Restored);
+ Assert(!File.Exists(Path.Combine(f.PackageRoot,"AppData/Engine/Mods/taskbar-background-helper.ini")));
+});
+Test("native background without style asset is rejected", f=>{f.AddBackdrop();Reject(()=>f.Check());});
 var failures=checks.Count(x=>!(bool)x.GetType().GetProperty("passed")!.GetValue(x)!);
 var source=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../src/ClassicDesk/ShellActivationHost.cs"));
 var report=new { passed=checks.Count-failures,failed=failures,filter=args.Length>1?args[1]:null,realRegistryWrites=0,realProcessStarts=0,realProcessStops=0,realWindowInteractions=0,testMode="real isolated package files; injected fake registry/environment/process only",sourceSha256=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(source))),checks };
@@ -132,6 +174,14 @@ var output=Path.GetFullPath(args[0]); Directory.CreateDirectory(Path.GetDirector
 sealed class Fixture {
  public string PackageRoot,Logs; public ShellProfile Profile=new(); public FakeAlignment Registry=new(); public FakeProcesses Process=new(); public FakeEnvironment Environment; public WindowsShellActivationHost Host; public ShellActivationCoordinator Core;
  public Fixture(string root) { Directory.CreateDirectory(root); PackageRoot=Path.Combine(root,"package"); Logs=Path.Combine(root,"journals"); ShellBackendConfig.CreateDisabledConfiguration(PackageRoot,new()); string[] assets=["windhawk.exe","windhawk-x64-helper.exe","Engine/1.7.3/32/windhawk.dll","Engine/1.7.3/64/windhawk.dll","Engine/1.7.3/32/msdia140_windhawk.dll","Engine/1.7.3/32/symsrv_windhawk.dll","Engine/1.7.3/32/symsrv.yes","Engine/1.7.3/64/msdia140_windhawk.dll","Engine/1.7.3/64/symsrv_windhawk.dll","Engine/1.7.3/64/symsrv.yes","AppData/Engine/Mods/64/libc++.whl","AppData/Engine/Mods/64/libunwind.whl","AppData/Engine/Mods/64/windhawk-mod-shim.dll","AppData/Engine/Mods/64/taskbar-start-button-position_1.3.2.dll","AppData/Engine/Mods/64/taskbar-icon-size_1.3.10.dll","AppData/Engine/Mods/64/explorer-frame-classic_1.0.8.dll","AppData/Engine/Mods/64/explorer-context-menu-classic_1.0.2.dll"]; var list=new List<object>(); foreach(var a in assets) { var p=Path.Combine(PackageRoot,a); Directory.CreateDirectory(Path.GetDirectoryName(p)!); var bytes=Encoding.UTF8.GetBytes("NON-EXECUTABLE-FAKE-FIXTURE:"+a); File.WriteAllBytes(p,bytes); list.Add(new {path=a,bytes=bytes.Length,sha256=Convert.ToHexString(SHA256.HashData(bytes))}); } File.WriteAllText(Path.Combine(PackageRoot,"runtime-assets-manifest.json"),JsonSerializer.Serialize(new {engineVersion="1.7.3",assets=list})); Environment=new(Process); Host=new(Registry,Environment,Process); Core=new(Host,new FileActivationJournalStore(Logs)); }
+ public void AddStyle() {
+    var path=Path.Combine(PackageRoot,WindowsShellActivationHost.StyleAsset); var bytes=Encoding.UTF8.GetBytes("NON-EXECUTABLE-STYLE-FIXTURE"); File.WriteAllBytes(path,bytes);
+    ChangeManifest(doc=>doc["assets"]!.AsArray().Add(System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new{path=WindowsShellActivationHost.StyleAsset,bytes=bytes.Length,sha256=Convert.ToHexString(SHA256.HashData(bytes))}))));
+ }
+ public void AddBackdrop() {
+    var path=Path.Combine(PackageRoot,WindowsShellActivationHost.BackdropAsset); var bytes=Encoding.UTF8.GetBytes("NON-EXECUTABLE-BACKDROP-FIXTURE"); File.WriteAllBytes(path,bytes);
+    ChangeManifest(doc=>doc["assets"]!.AsArray().Add(System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(new{path=WindowsShellActivationHost.BackdropAsset,bytes=bytes.Length,sha256=Convert.ToHexString(SHA256.HashData(bytes))}))));
+ }
  public ActivationPackageCheck Check()=>WindowsShellActivationHost.CheckPackage(PackageRoot);
  public ActivationConfirmation Capture()=>Core.CaptureConfirmation(Check().Package,Profile);
  public ActivationResult Activate()=>Core.Activate(Capture());
@@ -140,6 +190,6 @@ sealed class Fixture {
  public void ChangeManifest(Action<System.Text.Json.Nodes.JsonObject> edit) { var path=Path.Combine(PackageRoot,"runtime-assets-manifest.json"); var node=System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject(); edit(node); File.WriteAllText(path,node.ToJsonString()); }
 }
 sealed class FakeAlignment:IActivationAlignment { public ActivationItemState State=new(true,"0","original"); public int Reads,Writes; public bool ThrowAfterWrite; public ActivationItemState Read(){Reads++;return State;} public ActivationItemState CompareExchange(ActivationItemState expected,bool exists,string data){if(State!=expected)throw new IOException("fake CAS");Writes++;State=new(exists,data,"fake-"+Writes);if(ThrowAfterWrite)throw new IOException("unknown fake write");return State;} }
-sealed class FakeEnvironment(FakeProcesses process):IActivationEnvironment { public string Revision="fake-windows11-explorer-session"; public ActivationPresence Sab,Other; public ActivationEnvironmentObservation Inspect(ActivationDaemonIdentity? allowedDaemon)=>new(Revision,Sab,Other!=ActivationPresence.Absent?Other:process.Running&&allowedDaemon!=process.Identity?ActivationPresence.Present:ActivationPresence.Absent); }
+sealed class FakeEnvironment(FakeProcesses process):IActivationEnvironment { public string Revision="fake-windows11-explorer-session"; public ActivationPresence Sab,Other; public bool RequireStoppedIdentity; public ActivationEnvironmentObservation Inspect(ActivationDaemonIdentity? allowedDaemon)=>new(Revision,Sab,Other!=ActivationPresence.Absent?Other:(process.Running || RequireStoppedIdentity && process.Identity is not null)&&allowedDaemon!=process.Identity?ActivationPresence.Present:ActivationPresence.Absent); }
 sealed class FakeProcesses:IActivationProcesses { public int Starts,Stops; public Action? BeforeStart; public bool Running,Foreign,StopUnknown; public string Behavior="normal"; public ActivationDaemonIdentity? Identity; public ActivationStartResult Start(VerifiedActivationPackage p,string token,Action verifyBeforeStart){BeforeStart?.Invoke();try{verifyBeforeStart();}catch(Exception e){return new(ActivationOutcome.RejectedWithoutChange,null,e.Message);}Starts++;if(Behavior=="reject")return new(ActivationOutcome.RejectedWithoutChange,null);Running=true;Identity=new(7000+Starts,DateTime.UtcNow.Ticks,p.ExecutablePath,p.ExecutableSha256,token);return Behavior=="unknown"?new(ActivationOutcome.Unknown,null):new(ActivationOutcome.Confirmed,Identity);} public ActivationDaemonHealth Inspect(ActivationDaemonIdentity i)=>Foreign?ActivationDaemonHealth.DifferentProcess:i==Identity?(Running?ActivationDaemonHealth.SameProcessRunning:ActivationDaemonHealth.OwnedProcessExited):ActivationDaemonHealth.OwnedProcessExited; public ActivationStopResult Stop(ActivationDaemonIdentity i){if(i!=Identity||Foreign)throw new Exception("never stop foreign");Stops++;if(StopUnknown)return new(ActivationOutcome.Unknown);Running=false;return new(ActivationOutcome.Confirmed);} }
 namespace ClassicDesk { public sealed record ShellPreviewOptions(bool ClassicRibbon,bool StartOnLeft,int IconSize,int TaskbarHeight,bool ClassicContextMenu,bool Mica=true,int TaskbarButtonWidth=44,int SmallIconSize=16,int SmallTaskbarButtonWidth=32,bool OtherSystemButtonsOnLeft=true,bool StartMenuOnLeft=true,bool SearchMenuOnLeft=false,bool ClassicMenuWithCtrl=true,bool UseClassicNavigationBar=false); }

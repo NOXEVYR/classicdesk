@@ -109,7 +109,9 @@ public static class ShellBackendPlanner
                 Settings(("explorerStyle", profile.UseClassicNavigationBar ? "classicNavigationBar" : "classicRibbonUI"))),
             Mod("explorer-context-menu-classic", "1.0.2", "MIT", profile.ClassicContextMenu, ["explorer.exe"],
                 Settings(("overrideWithCtrl", profile.ClassicMenuWithCtrl ? "1" : "0"))),
-            Mod("windows-11-taskbar-styler", "1.9", "GPL-3.0", false, ["explorer.exe"], Settings())
+            Mod("windows-11-taskbar-styler", "1.9", "GPL-3.0", profile.CompactTray || profile.TranslucentTaskbar, ["explorer.exe"],
+                ShellTaskbarStyle.Settings(profile.CompactTray, profile.TranslucentTaskbar)),
+            Mod("taskbar-background-helper", "1.2", "GPL-3.0", profile.TranslucentTaskbar, ["explorer.exe"], ShellTaskbarStyle.BackdropSettings())
         };
         var blockers = new List<string>();
         if (environment.Build is null) blockers.Add("Windows 构建号未能读取，不能推断兼容性。");
@@ -138,7 +140,7 @@ public static class ShellBackendPlanner
             "优先审查官方预编译 DLL 与 versions.json，固定所选版本、文件 hash 和 PE 依赖；只有修改源码或预编译不匹配时才另行考虑开发编译器。",
             "核对可携带最小运行文件、GPL/MIT 与第三方许可；预编译 DLL 必须与目标架构、Windhawk API 和运行库匹配。",
             "仅在审查通过后设计备份事务：保存原文件字节/修订，写入独立便携目录中的 Disabled=1 配置，再逐模块加载并回读。",
-            "先验证开始按钮位置、图标尺寸和经典 Ribbon，再单独验证右键菜单；Taskbar Styler 当前没有选定样式，不默认为启用。",
+            "先验证开始按钮位置、图标尺寸和经典 Ribbon，再单独验证右键菜单；Taskbar Styler 仅在勾选半透明或紧凑托盘时启用内置样式。",
             "左侧系统按钮/中间应用要求原生 TaskbarAl=1；将来对齐修改必须单独备份、记录归属并可恢复。禁用模块不能视作开始和应用自动居中的恢复。",
             "通过后由本 WPF 前端控制配置；使用 -tray-only 运行引擎而不打开 Windhawk 设置 UI，关闭 WPF 后验收效果与资源占用。"
         };

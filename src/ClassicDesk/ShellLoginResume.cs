@@ -70,7 +70,9 @@ public sealed class ShellLoginRegistration(string dataDirectory, string startupD
         Directory.CreateDirectory(data);
         using var lease = new FileStream(Path.Combine(data, "login-resume.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
         var previous = Read();
-        if (previous is not null) RequireBinding(previous);
+        // A disabled installation with no remaining launcher can be migrated.
+        // Active or surviving launchers still require their original binding.
+        if (previous is not null && (previous.Enabled || File.Exists(EntryPath))) RequireBinding(previous);
         if (File.Exists(EntryPath))
         {
             if (previous is null) throw new IOException("同名启动项不属于本工具，未覆盖。");

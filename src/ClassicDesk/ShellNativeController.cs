@@ -9,7 +9,16 @@ public sealed class ShellNativeController : IShellNativeController
 {
     // This manifest and every referenced asset were reviewed from the fixed official package.
     // A self-consistent replacement manifest is not trusted by this application.
-    public const string ReviewedRuntimeManifest = "87EBC2871F686E9E26DFF7CCDCC65CD181AC98DB80EAEC442B8D82720C3E139E";
+    public const string LegacyRuntimeManifest = "87EBC2871F686E9E26DFF7CCDCC65CD181AC98DB80EAEC442B8D82720C3E139E";
+    public const string StyleRuntimeManifest = "2EBD2A6D098D7F63535687212F352B29F32D6E67E2866E69E2A71F3E7B314007";
+    public const string ReviewedRuntimeManifest = "A7F8F186C1F60946D26C0630C28DAC461EF36DC037906DFD3BBBC3038F0EAEFA";
+    public static ActivationPackageCheck CheckReviewedPackage(string root)
+    {
+        var check = WindowsShellActivationHost.CheckPackage(root);
+        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest)
+            throw new InvalidDataException("运行资产清单不是已核对的版本。");
+        return check;
+    }
     readonly string packageRoot, journalDirectory;
     readonly IActivationHost host;
     readonly ShellActivationCoordinator coordinator;
@@ -41,7 +50,7 @@ public sealed class ShellNativeController : IShellNativeController
     {
         if (!review.CanEnable || review.EnableTicket is null) throw new InvalidOperationException("请先检查当前方案。");
         if (PendingRecords().Length != 0) throw new InvalidOperationException("出现未结束的切换记录，请先检查恢复状态。");
-        var verified = WindowsShellActivationHost.CheckPackage(packageRoot, ReviewedRuntimeManifest).Package;
+        var verified = CheckReviewedPackage(packageRoot).Package;
         if (verified != review.EnableTicket.Package) throw new InvalidOperationException("增强组件已变化，请重新检查。");
         return coordinator.Activate(review.EnableTicket);
     });
@@ -56,7 +65,7 @@ public sealed class ShellNativeController : IShellNativeController
         if (!review.CanResume || review.ResumeTicket is null) throw new InvalidOperationException("请先检查已停止的增强。");
         var pending = PendingRecords();
         if (pending.Length != 1 || pending[0].Id != review.ResumeTicket.JournalId) throw new InvalidOperationException("恢复记录已变化。");
-        var verified = WindowsShellActivationHost.CheckPackage(packageRoot, ReviewedRuntimeManifest).Package;
+        var verified = CheckReviewedPackage(packageRoot).Package;
         if (pending[0].Package != verified) throw new InvalidOperationException("增强组件已变化。");
         return coordinator.Resume(review.ResumeTicket);
     });
@@ -86,7 +95,7 @@ public sealed class ShellNativeController : IShellNativeController
                 string.Join("\n", pending.Select(j => $"记录 {j.Id:N} · {j.State}")) +
                 "\n请先恢复原来使用的同版本运行组件，再重新检查。记录已保留；此时不会启用新方案、停止进程或覆盖桌面设置。");
         if (!Directory.Exists(packageRoot)) return new("公开预览版未包含增强运行组件", "此下载包只包含 ClassicDesk 前端。第三方增强组件的公开分发材料尚在整理，当前不能启用真实桌面改造；预览、方案保存和停用配置生成仍可使用。");
-        var check = WindowsShellActivationHost.CheckPackage(packageRoot, ReviewedRuntimeManifest);
+        var check = CheckReviewedPackage(packageRoot);
         if (pending.Length > 1) return new("有多份未结束的切换记录", "为避免覆盖已有设置，需要先核对本机恢复记录。本次不进行切换。");
         if (pending.Length == 1)
         {
@@ -114,9 +123,13 @@ public sealed class ShellNativeController : IShellNativeController
             var summary = (applied.SkipTaskbarLayout ? "保留任务栏位置" : applied.StartOnLeft ? "开始靠左、应用居中" : "开始与应用居中") +
                 (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
                 (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
+                (applied.TranslucentTaskbar ? "；半透明任务栏" : "") +
+                (applied.CompactTray ? "；紧凑托盘" : "") +
                 (applied.ClassicContextMenu ? "；完整右键菜单" : "；Win11 右键菜单");
             return new("增强正在运行", "当前已应用规则：" + summary + "。\n登录恢复沿用这整套规则，与尚未应用的编辑草稿无关。资源管理器样式请在新开的窗口中检查。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);
         }
+        if (profile.TranslucentTaskbar && !File.Exists(Path.Combine(packageRoot, WindowsShellActivationHost.BackdropAsset)))
+            return new("半透明任务栏需要新版运行组件", "此旧运行包保留恢复兼容；请使用包含原生背景模块的新版安装目录应用半透明方案。");
         var modules = ShellBackendPlanner.CreatePlan(profile, new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", [])).Modules.Where(m => m.Selected).ToArray();
         if (modules.Length == 0)
             return new("未选择增强功能", "请勾选需要的增强。仅选择原生居中布局或 Windows 11 原生样式时，不启动后台引擎；可在 Windows 设置中调整原生对齐。");

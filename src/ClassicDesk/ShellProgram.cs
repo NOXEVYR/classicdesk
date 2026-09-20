@@ -32,7 +32,7 @@ public static class ShellProgram
             {
                 // Diagnostics do not construct an Application, activate modules or create journals.
                 object report = args[0] == "--check-runtime"
-                    ? WindowsShellActivationHost.CheckPackage(args[1], ShellNativeController.ReviewedRuntimeManifest)
+                    ? ShellNativeController.CheckReviewedPackage(args[1])
                     : args[0] == "--inspect-native"
                         ? LoginController(ShellLoginRegistration.Current()).ReviewAsync(new ShellProfile()).GetAwaiter().GetResult()
                         : ShellBackendPlanner.Detect();

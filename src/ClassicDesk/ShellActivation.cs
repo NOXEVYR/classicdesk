@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace ClassicDesk;
 
-public enum ActivationTarget { TaskbarAlignment, StartButtonMod, IconSizeMod, ExplorerFrameMod, ContextMenuMod, MainSettings, EngineSettings }
+public enum ActivationTarget { TaskbarAlignment, StartButtonMod, IconSizeMod, ExplorerFrameMod, ContextMenuMod, MainSettings, EngineSettings, TaskbarStyleMod, TaskbarBackdropMod }
 public enum ActivationPresence { Absent, Present, Unknown }
 public enum ActivationOutcome { Confirmed, RejectedWithoutChange, Unknown }
 public enum ActivationDaemonHealth { SameProcessRunning, OwnedProcessExited, DifferentProcess, Unknown }
@@ -513,8 +513,12 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
     }
     static void ValidatePreparation(VerifiedActivationPackage package, ShellProfile profile, ActivationPreparation preparation)
     {
-        if (preparation is null || preparation.Changes is null || preparation.Changes.Length != 7
-            || preparation.Changes.Select(c => c.Target).Distinct().Count() != 7) throw new InvalidDataException("必须提供完整且唯一的七个目标（含主程序和引擎的独立安全模式配置）。");
+        if (preparation is null || preparation.Changes is null || preparation.Changes.Length is not (7 or 8 or 9)
+            || preparation.Changes.Select(c => c.Target).Distinct().Count() != preparation.Changes.Length
+            || Enum.GetValues<ActivationTarget>().Where(t=>t<=ActivationTarget.EngineSettings).Any(t=>!preparation.Changes.Any(c=>c.Target==t))
+            || preparation.Changes.Any(c=>c.Target==ActivationTarget.TaskbarBackdropMod) && !preparation.Changes.Any(c=>c.Target==ActivationTarget.TaskbarStyleMod)
+            || (profile.CompactTray || profile.TranslucentTaskbar) && !preparation.Changes.Any(c=>c.Target==ActivationTarget.TaskbarStyleMod))
+            throw new InvalidDataException("必须提供完整且唯一的基础目标；任务栏样式需要独立恢复目标。");
         foreach (var change in preparation.Changes)
         {
             if (!Enum.IsDefined(change.Target) || change.Before is null || string.IsNullOrWhiteSpace(change.Before.Revision)) throw new InvalidDataException("目标或修订无效。");

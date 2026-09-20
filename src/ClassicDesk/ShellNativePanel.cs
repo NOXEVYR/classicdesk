@@ -190,7 +190,7 @@ public sealed class ShellNativePanel : Window
     {
         var effective = Selection.Apply(profile);
         var modules = (Selection.Layout && profile.StartOnLeft ? 1 : 0) + (Selection.Sizing ? 1 : 0) +
-            (effective.ClassicRibbon || effective.UseClassicNavigationBar ? 1 : 0) + (effective.ClassicContextMenu ? 1 : 0);
+            (effective.ClassicRibbon || effective.UseClassicNavigationBar ? 1 : 0) + (effective.ClassicContextMenu ? 1 : 0) + (effective.CompactTray || effective.TranslucentTaskbar ? 1 : 0) + (effective.TranslucentTaskbar ? 1 : 0);
         selectionSummary.Text = $"本次需要 {modules} 个增强模块 · " + (Selection.Layout ? "调整任务栏对齐" : "保留任务栏对齐") + "\n未勾选的模块保持停用；所有组合共用一个引擎。";
     }
     static SolidColorBrush Color(string hex) => new((Color)ColorConverter.ConvertFromString(hex));
