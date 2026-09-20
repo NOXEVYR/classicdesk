@@ -334,11 +334,11 @@ internal static class FrontendChecks
         Check("明暗跟随联动透明开关并保存导入", () =>
         {
             var file=Path.Combine(run,"adaptive-theme.json");var window=New(file);
-            Toggle(window,"跟随最大化窗口明暗").IsChecked=true;
+            Toggle(window,"应用不透明，桌面透明").IsChecked=true;
             Require(window.Draft.FollowMaximizedTheme&&window.Draft.TranslucentTaskbar,"开启跟随没有开启透明。");
             window.SaveDraft();Require(ShellProfileFile.Import(file)==window.Draft,"颜色规则没有保存。");
             window.SelectPage(1);window.SelectPage(0);
-            Require(Toggle(window,"跟随最大化窗口明暗").IsChecked==true,"跨页丢失颜色规则。");
+            Require(Toggle(window,"应用不透明，桌面透明").IsChecked==true,"跨页丢失颜色规则。");
             Toggle(window,"透明任务栏").IsChecked=false;
             Require(!window.Draft.FollowMaximizedTheme&&!window.Draft.TranslucentTaskbar,"关闭透明遗留了无效跟随。");
         });

@@ -14,11 +14,12 @@ public sealed class ShellNativeController : IShellNativeController
     public const string StaticRuntimeManifest = "A7F8F186C1F60946D26C0630C28DAC461EF36DC037906DFD3BBBC3038F0EAEFA";
     public const string FirstAdaptiveRuntimeManifest = "A775D708F64B3832F7E23ECC700420DCB5C27C8C8EA3C0EEA3ECE6140AD10BE2";
     public const string SecondAdaptiveRuntimeManifest = "758AF898CD72226F5CA266E49B06ABC8D641C6E2409737F04B636499E7D2BE34";
-    public const string ReviewedRuntimeManifest = "DFBBB14F0943C48B4971C3F31F0BA422F3C032CCB093ABADDA8319BADE2783D0";
+    public const string ThirdAdaptiveRuntimeManifest = "DFBBB14F0943C48B4971C3F31F0BA422F3C032CCB093ABADDA8319BADE2783D0";
+    public const string ReviewedRuntimeManifest = "73523BCC5CF7C294128C9F1D6A04A2D11456E9514C4457FFB4102A6742148BA5";
     public static ActivationPackageCheck CheckReviewedPackage(string root)
     {
         var check = WindowsShellActivationHost.CheckPackage(root);
-        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest)
+        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest && check.Package.ManifestSha256 != ThirdAdaptiveRuntimeManifest)
             throw new InvalidDataException("运行资产清单不是已核对的版本。");
         return check;
     }
@@ -127,7 +128,7 @@ public sealed class ShellNativeController : IShellNativeController
                 (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
                 (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
                 (applied.TranslucentTaskbar ? "；透明任务栏" : "") +
-                (applied.FollowMaximizedTheme ? "；最大化窗口明暗跟随" : "") +
+                (applied.FollowMaximizedTheme ? journal.Package.ManifestSha256 == ReviewedRuntimeManifest ? "；应用不透明、桌面透明" : "；最大化窗口明暗跟随（旧版组件）" : "") +
                 (applied.CompactTray ? "；紧凑托盘" : "") +
                 (applied.ClassicContextMenu ? "；完整右键菜单" : "；Win11 右键菜单");
             return new("增强正在运行", "当前已应用规则：" + summary + "。\n登录恢复沿用这整套规则，与尚未应用的编辑草稿无关。资源管理器样式请在新开的窗口中检查。设置窗口可以退出。", CanRestore: true, RestoreTicket: ticket, IsRunning: true);

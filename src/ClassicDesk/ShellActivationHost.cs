@@ -123,7 +123,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         if ((profile.CompactTray || profile.TranslucentTaskbar) && !targets.Contains(ActivationTarget.TaskbarStyleMod))
             throw new InvalidDataException("此运行包未包含半透明和紧凑托盘组件，请使用新版运行包。");
         if (profile.FollowMaximizedTheme && !File.Exists(SafePath(package.Root, AdaptiveBackdropAsset)))
-            throw new InvalidDataException("此运行包没有最大化窗口明暗跟随组件。");
+            throw new InvalidDataException("此运行包没有应用不透明、桌面透明组件。");
         var before = targets.ToDictionary(t => t, t => Read(package, t));
         var desired = DesiredFiles(profile, before);
         return new(guards, targets.Select(t =>

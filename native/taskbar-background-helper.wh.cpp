@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-background-helper
 // @name            ClassicDesk adaptive taskbar background
-// @description     ClassicDesk fork: clear desktop, light/dark maximized window, event-driven.
+// @description     ClassicDesk fork: clear desktop, opaque foreground apps, event-driven.
 // @version         1.2-classicdesk.1
 // @author          ClassicDesk contributors
 // @include         explorer.exe
@@ -48,8 +48,8 @@ std::atomic<HWND> eventWindow{nullptr};
 HANDLE eventThread;
 DWORD eventThreadId;
 std::atomic<bool> stopping{false}, workQueued{false};
-std::atomic<DWORD> desiredColor{ClearColor};
-std::atomic<int> desiredTheme{0};
+std::atomic<DWORD> desiredColor{LightColor};
+std::atomic<int> desiredTheme{1};
 std::atomic<ULONGLONG> eventCount{0}, sampleCount{0}, applyCount{0};
 std::mutex rootMutex;
 struct Root { winrt::weak_ref<FrameworkElement> element; ElementTheme original; };
@@ -164,41 +164,43 @@ void WINAPI PaddingHook(void* instance) { paddingUpdateOriginal(instance); Disco
 void RefreshState() {
     if(stopping || !IsWindow(taskbar)) return;
     HWND foreground=GetForegroundWindow(); if(!foreground) return;
-    // Keep the last mode while the user opens a taskbar/start/flyout surface.
-    if(IsShellSurface(foreground)) return;
-    HWND owner=GetAncestor(foreground,GA_ROOTOWNER);
-    if(owner && IsZoomed(owner)) foreground=owner;
-    MONITORINFO monitor{sizeof(monitor)};
-    HMONITOR taskMonitor=MonitorFromWindow(taskbar,MONITOR_DEFAULTTONEAREST);
-    if(!GetMonitorInfoW(taskMonitor,&monitor)) return;
-    RECT frame{};
-    bool hasFrame=SUCCEEDED(DwmGetWindowAttribute(foreground,9,&frame,sizeof(frame)));
-    bool fillsWorkArea=hasFrame && ClassicDeskAppearance::CoversWorkArea(frame.left,frame.top,frame.right,frame.bottom,
-        monitor.rcWork.left,monitor.rcWork.top,monitor.rcWork.right,monitor.rcWork.bottom);
-    bool maximized=(IsZoomed(foreground) || fillsWorkArea) && !IsDesktop(foreground) && !IsIconic(foreground) && IsWindowVisible(foreground) &&
-        MonitorFromWindow(foreground,MONITOR_DEFAULTTONEAREST)==taskMonitor;
+    using namespace ClassicDeskAppearance;
     DWORD cloaked=0;
-    if(SUCCEEDED(DwmGetWindowAttribute(foreground,14,&cloaked,sizeof(cloaked))) && cloaked) maximized=false;
-    RECT area=monitor.rcWork;
+    bool hidden=IsIconic(foreground) || !IsWindowVisible(foreground) ||
+        (SUCCEEDED(DwmGetWindowAttribute(foreground,14,&cloaked,sizeof(cloaked))) && cloaked);
+    Surface surface=IsShellSurface(foreground) ? Surface::ShellFlyout :
+        hidden ? Surface::Unknown : IsDesktop(foreground) ? Surface::Desktop : Surface::Application;
+    auto backdrop=BackgroundFor(surface);
+    if(backdrop==Backdrop::Preserve) return;
+    bool opaque=backdrop==Backdrop::Opaque;
+    MONITORINFO monitor{sizeof(monitor)};
+    bool hasMonitor=GetMonitorInfoW(MonitorFromWindow(opaque?foreground:taskbar,MONITOR_DEFAULTTONEAREST),&monitor);
     int brightness=-1;
-    if(maximized) brightness=SampleBrightness(foreground,area,false);
-    else if(IsDesktop(foreground)) brightness=SampleBrightness(foreground,area,true);
+    if(hasMonitor) {
+        RECT area=monitor.rcWork;
+        if(opaque) {
+            RECT frame{},visible{};
+            if(SUCCEEDED(DwmGetWindowAttribute(foreground,9,&frame,sizeof(frame))) &&
+                IntersectRect(&visible,&frame,&area) && visible.bottom-visible.top>12)
+                brightness=SampleBrightness(foreground,visible,false);
+        } else brightness=SampleBrightness(foreground,area,true);
+    }
     bool dark=desiredTheme.load()==2;
     if(brightness>=0) {
         // Hysteresis avoids flicker around medium-grey page backgrounds.
         dark=ClassicDeskAppearance::Dark(brightness,dark);
-    } else if(maximized) {
+    } else if(opaque) {
         BOOL nativeDark=FALSE;
         if(SUCCEEDED(DwmGetWindowAttribute(foreground,20,&nativeDark,sizeof(nativeDark)))) dark=nativeDark!=FALSE;
-        else return; // Preserve a known colour if neither source is available.
+        // Failed colour detection preserves the last theme, never transparency.
     }
-    DWORD color=maximized ? (dark?DarkColor:LightColor) : ClearColor;
+    DWORD color=opaque ? (dark?DarkColor:LightColor) : ClearColor;
     int theme=dark?2:1;
     if(desiredColor.exchange(color)!=color || desiredTheme.load()!=theme) {
         desiredTheme=theme; ApplyNative(); ApplyRoots(false); ++applyCount;
     }
     SetPropW(taskbar,L"ClassicDesk.Adaptive.Thread",(HANDLE)(ULONG_PTR)GetCurrentThreadId());
-    SetPropW(taskbar,L"ClassicDesk.Adaptive.Mode",(HANDLE)(ULONG_PTR)(maximized?(dark?3:2):1));
+    SetPropW(taskbar,L"ClassicDesk.Adaptive.Mode",(HANDLE)(ULONG_PTR)(opaque?(dark?3:2):1));
     SetPropW(taskbar,L"ClassicDesk.Adaptive.Samples",(HANDLE)(ULONG_PTR)sampleCount.load());
     SetPropW(taskbar,L"ClassicDesk.Adaptive.Events",(HANDLE)(ULONG_PTR)eventCount.load());
 }

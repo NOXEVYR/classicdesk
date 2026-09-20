@@ -20,6 +20,15 @@ while (sourceRoot is not null && !File.Exists(Path.Combine(sourceRoot.FullName, 
 if (sourceRoot is null) throw new DirectoryNotFoundException("Runtime lock source not found.");
 var manifestBytes = File.ReadAllBytes(Path.Combine(sourceRoot.FullName, "runtime", "windows-x64-assets.json"));
 allChecks.Add(new { name = "Reviewed runtime lock bytes match the compiled pin", passed = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(manifestBytes)) == ShellNativeController.ReviewedRuntimeManifest });
+var oldAdaptiveBytes = File.ReadAllBytes(Path.Combine(sourceRoot.FullName, "runtime", "windows-x64-assets-adaptive-v3.json"));
+allChecks.Add(new { name = "Previous adaptive package keeps its recovery pin", passed = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(oldAdaptiveBytes)) == ShellNativeController.ThirdAdaptiveRuntimeManifest });
+using (var manifest = JsonDocument.Parse(manifestBytes))
+{
+    var module = manifest.RootElement.GetProperty("modules").EnumerateArray().Single(m => m.GetProperty("version").GetString() == "1.2-classicdesk.1");
+    string Digest(string path) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(Path.Combine(sourceRoot.FullName, path)))).ToLowerInvariant();
+    allChecks.Add(new { name = "Adaptive native source matches runtime lock", passed = Digest("native/taskbar-background-helper.wh.cpp") == module.GetProperty("sourceSha256").GetString() });
+    allChecks.Add(new { name = "Foreground appearance policy matches runtime lock", passed = Digest("native/appearance-policy.h") == module.GetProperty("policySourceSha256").GetString() });
+}
 foreach (var preset in ShellPresets.All)
 {
     var originalProfile = preset.Profile;

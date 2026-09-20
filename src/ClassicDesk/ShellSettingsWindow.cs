@@ -190,7 +190,7 @@ public sealed class ShellSettingsWindow : Window
             AddRow(advancedRows, "启用布局调整", "关闭时保留当前位置参数与设计预览。", Toggle(!Draft.SkipTaskbarLayout, value => Change(Draft with { SkipTaskbarLayout = !value })));
             AddRow(advancedRows, "启用尺寸调整", "关闭时保留图标、栏高和按钮尺寸参数。", Toggle(!Draft.SkipTaskbarSizing, value => Change(Draft with { SkipTaskbarSizing = !value })));
             AddRow(advancedRows, "透明任务栏", "桌面背景透明，保留图标、文字与运行指示条。", Toggle(Draft.TranslucentTaskbar, value => Change(Draft with { TranslucentTaskbar = value, FollowMaximizedTheme = value && Draft.FollowMaximizedTheme })));
-            AddRow(advancedRows, "跟随最大化窗口明暗", "最大化时匹配窗口浅色或深色，回到桌面时透明。", Toggle(Draft.FollowMaximizedTheme, value => Change(Draft with { FollowMaximizedTheme = value, TranslucentTaskbar = value || Draft.TranslucentTaskbar })));
+            AddRow(advancedRows, "应用不透明，桌面透明", "浏览器和其他应用窗口使用不透明底板，回到桌面时透明。", Toggle(Draft.FollowMaximizedTheme, value => Change(Draft with { FollowMaximizedTheme = value, TranslucentTaskbar = value || Draft.TranslucentTaskbar })));
             AddRow(advancedRows, "紧凑系统托盘", "右侧按钮间距收紧为 20，保留图标大小和单行排列。", Toggle(Draft.CompactTray, value => Change(Draft with { CompactTray = value })));
             AddRow(advancedRows, "小图标尺寸", "Windows 使用小图标模式时的尺寸。", PixelChoice(ShellProfile.IconSizes, Draft.SmallIconSize, value => Change(Draft with { SmallIconSize = value })));
             AddRow(advancedRows, "小按钮宽度", "Windows 使用小图标模式时的按钮宽度。", PixelChoice(ShellProfile.ButtonWidths, Draft.SmallTaskbarButtonWidth, value => Change(Draft with { SmallTaskbarButtonWidth = value })));
