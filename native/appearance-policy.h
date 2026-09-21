@@ -22,9 +22,12 @@ inline bool ExpandedOnTaskbarMonitor(bool sameMonitor,bool maximized,Bounds fram
 }
 enum class Surface { Unknown, Desktop, Application, ExpandedApplication, ShellFlyout };
 enum class Backdrop { Preserve, Transparent, Opaque };
-enum class VisibleApps { Unknown, None, Present };
+enum class VisibleApps { Unknown, None, Present, ExpandedPresent };
 inline Backdrop BackgroundFor(Surface surface,VisibleApps apps=VisibleApps::Unknown) {
     if(surface==Surface::Desktop) return Backdrop::Transparent;
+    // A focused small window does not uncover the desktop underneath a
+    // maximized browser. The visible scene, not focus alone, owns the backdrop.
+    if(apps==VisibleApps::ExpandedPresent) return Backdrop::Opaque;
     if(surface==Surface::Application) return Backdrop::Transparent;
     if(surface==Surface::ExpandedApplication) return Backdrop::Opaque;
     // Minimize/show-desktop may leave focus on the taskbar or a hidden window.
@@ -32,12 +35,13 @@ inline Backdrop BackgroundFor(Surface surface,VisibleApps apps=VisibleApps::Unkn
     if(apps==VisibleApps::None) return Backdrop::Transparent;
     return Backdrop::Preserve;
 }
-enum class Change { Foreground, Minimize, Visibility, Destroyed, Other };
+enum class Change { Foreground, Minimize, Visibility, Geometry, Destroyed, Other };
 inline bool NeedsRefresh(Change change,bool relevant,bool topLevel,bool tracked) {
     if(change==Change::Foreground || change==Change::Minimize) return true;
     if(change==Change::Destroyed) return tracked;
     if(change==Change::Visibility) return topLevel || relevant || tracked;
-    return relevant;
+    if(change==Change::Geometry) return topLevel || relevant || tracked;
+    return relevant || tracked;
 }
 inline bool Dark(int brightness,bool previous) {
     if(brightness>=0 && brightness<110) return true;

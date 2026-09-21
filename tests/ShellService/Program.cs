@@ -61,6 +61,11 @@ Test("service states never offer a second engine or legacy restore", () =>
         foreach (var start in new[] { 2, 3, 4 })
         { var r = new ShellServiceObservation(true, start, state, "test").Review();Check(!r.CanEnable && !r.CanRestore && !r.CanResume && !r.IsRunning); }
 });
+Test("running old service does not report staged update as applied", () =>
+{
+    var review = new ShellServiceObservation(true, 2, 4, "test", true).Review();
+    Check(review.Title.Contains("等待重启") && !review.IsRunning && !review.CanEnable && !review.CanRestore && !review.CanResume);
+});
 Check(ShellServicePackage.Verify(fixture).Files.Count == bundle.Files.Count);
 int failed = results.Count(r => !(bool)r.GetType().GetProperty("passed")!.GetValue(r)!);
 var report = JsonSerializer.Serialize(new { passed = results.Count - failed, failed, serviceWrites = 0, engineStarts = 0, checks = results }, new JsonSerializerOptions { WriteIndented = true });

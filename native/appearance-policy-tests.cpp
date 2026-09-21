@@ -5,6 +5,14 @@ int main() {
     // Ordinary browser/app windows leave the wallpaper visible. Only expanded
     // windows make the bar opaque; restoring a window must clear it again.
     assert(BackgroundFor(Surface::Application)==Backdrop::Transparent);
+    // Small foreground app over a still-visible maximized browser remains
+    // opaque. Restoring/minimizing the last expanded window clears the bar.
+    assert(BackgroundFor(Surface::Application,VisibleApps::ExpandedPresent)==Backdrop::Opaque);
+    assert(BackgroundFor(Surface::Application,VisibleApps::Present)==Backdrop::Transparent);
+    assert(BackgroundFor(Surface::Application,VisibleApps::None)==Backdrop::Transparent);
+    assert(BackgroundFor(Surface::ShellFlyout,VisibleApps::ExpandedPresent)==Backdrop::Opaque);
+    assert(BackgroundFor(Surface::Unknown,VisibleApps::ExpandedPresent)==Backdrop::Opaque);
+    assert(BackgroundFor(Surface::Desktop,VisibleApps::ExpandedPresent)==Backdrop::Transparent);
     assert(BackgroundFor(Surface::ExpandedApplication)==Backdrop::Opaque);
     Bounds work{0,0,2560,1368};
     assert(!ExpandedOnTaskbarMonitor(true,false,{500,100,2200,1200},work));
@@ -35,6 +43,9 @@ int main() {
     assert(NeedsRefresh(Change::Destroyed,false,false,true));
     assert(!NeedsRefresh(Change::Visibility,false,false,false));
     assert(!NeedsRefresh(Change::Other,false,true,false));
+    assert(NeedsRefresh(Change::Geometry,false,true,false)); // Background app maximizes/restores.
+    assert(!NeedsRefresh(Change::Geometry,false,false,false)); // Child controls do not rescan.
+    assert(NeedsRefresh(Change::Other,false,true,true)); // Tracked background app theme/name event.
     assert(Luminance(0,0,0)==0 && Luminance(255,255,255)==255);
     assert(Luminance(243,243,243)>150 && Luminance(32,32,32)<110);
     assert(Median({255,255,255,255,255,0,0,0,0},9)==255);

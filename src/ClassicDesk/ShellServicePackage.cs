@@ -17,7 +17,7 @@ public sealed record ShellServiceBundle(int SchemaVersion, string State, string 
 public static class ShellServicePackage
 {
     public const string ServiceName = "ClassicDeskShell";
-    public const string ReviewedHostSha256 = "1ABC2CF83F340CE243313294EFD7443B9F33A484F3BEB2A37823CC3886C73545";
+    public const string ReviewedHostSha256 = "14603CC429E3A109AAD6133E163131DCEC890F2F8F7D614554B435CE2468A67D";
     public const string EngineInclude = @"%SystemRoot%\System32\winlogon.exe|%SystemRoot%\System32\userinit.exe|%SystemRoot%\explorer.exe|%SystemRoot%\SystemApps\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\StartMenuExperienceHost.exe";
     static readonly Encoding Ini = new UnicodeEncoding(false, true);
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };

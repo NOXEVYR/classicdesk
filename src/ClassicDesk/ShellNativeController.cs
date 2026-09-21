@@ -17,11 +17,12 @@ public sealed partial class ShellNativeController : IShellNativeController
     public const string ThirdAdaptiveRuntimeManifest = "DFBBB14F0943C48B4971C3F31F0BA422F3C032CCB093ABADDA8319BADE2783D0";
     public const string FourthAdaptiveRuntimeManifest = "73523BCC5CF7C294128C9F1D6A04A2D11456E9514C4457FFB4102A6742148BA5";
     public const string FifthAdaptiveRuntimeManifest = "4CE7713E3B25903B7A33CE043F4A12338DA6B24BE69B09FF687092CD4D82DB44";
-    public const string ReviewedRuntimeManifest = "49C4EF0FB577AC4D053973F46FADD4B3F8AF6948863E63FDCD8B3E3AD5EAF423";
+    public const string SixthAdaptiveRuntimeManifest = "49C4EF0FB577AC4D053973F46FADD4B3F8AF6948863E63FDCD8B3E3AD5EAF423";
+    public const string ReviewedRuntimeManifest = "02FB7D1F8FD886CBEF1569DA87F481ACD433B1E8C8BD064A4B7EED66A253FA2C";
     public static ActivationPackageCheck CheckReviewedPackage(string root)
     {
         var check = WindowsShellActivationHost.CheckPackage(root);
-        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest && check.Package.ManifestSha256 != ThirdAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FourthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FifthAdaptiveRuntimeManifest)
+        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest && check.Package.ManifestSha256 != ThirdAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FourthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FifthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SixthAdaptiveRuntimeManifest)
             throw new InvalidDataException("运行资产清单不是已核对的版本。");
         return check;
     }

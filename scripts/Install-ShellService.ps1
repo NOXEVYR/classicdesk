@@ -1,14 +1,14 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)][ValidateSet('Validate','Inspect','InstallDisabled','EnableNextBoot','DisableNextBoot','RemoveStopped')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('Validate','Inspect','InstallDisabled','StageUpdate','EnableNextBoot','DisableNextBoot','RemoveStopped')][string]$Action,
     [string]$Bundle,
     [string]$Installation,
     [string]$ExpectedBundleHash
 )
 $ErrorActionPreference='Stop'
 $serviceName='ClassicDeskShell'
-$expectedHost='1ABC2CF83F340CE243313294EFD7443B9F33A484F3BEB2A37823CC3886C73545'
-$expectedRuntime='49C4EF0FB577AC4D053973F46FADD4B3F8AF6948863E63FDCD8B3E3AD5EAF423'
+$expectedHost='14603CC429E3A109AAD6133E163131DCEC890F2F8F7D614554B435CE2468A67D'
+$expectedRuntime='02FB7D1F8FD886CBEF1569DA87F481ACD433B1E8C8BD064A4B7EED66A253FA2C'
 $expectedScope='%SystemRoot%\System32\winlogon.exe|%SystemRoot%\System32\userinit.exe|%SystemRoot%\explorer.exe|%SystemRoot%\SystemApps\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\StartMenuExperienceHost.exe'
 $adminSid=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
 $systemSid=[Security.Principal.SecurityIdentifier]::new('S-1-5-18')
@@ -94,7 +94,7 @@ function Ensure-ProtectedDirectory([string]$Path) {
     New-Item -ItemType Directory -Path $Path -ErrorAction Stop | Out-Null
     Set-ProtectedAcl $Path $true
 }
-function Read-OwnedInstall([string]$Root) {
+function Read-OwnedInstall([string]$Root,[bool]$Previous=$false) {
     $Root=[IO.Path]::GetFullPath($Root).TrimEnd('\')
     if(-not $Root.StartsWith($serviceBase+'\',[StringComparison]::OrdinalIgnoreCase)) {throw 'Not a ClassicDesk service installation'}
     Assert-Protected $base;Assert-Protected $serviceBase;Assert-Protected $Root
@@ -103,14 +103,15 @@ function Read-OwnedInstall([string]$Root) {
     if((Get-Item -LiteralPath $receiptPath).Length -gt 2MB){throw 'Oversized install receipt'}
     $receipt=Get-Content -LiteralPath $receiptPath -Encoding UTF8 -Raw | ConvertFrom-Json
     $image='"'+(Join-Path $Root 'ClassicDeskShell.exe')+'" --service'
-    if($receipt.SchemaVersion -ne 1 -or $receipt.ServiceName -ne $serviceName -or $receipt.ImagePath -ne $image -or $receipt.HostSha256 -ne $expectedHost) {throw 'Installation ownership mismatch'}
+    $hostPin=if($Previous){'1ABC2CF83F340CE243313294EFD7443B9F33A484F3BEB2A37823CC3886C73545'}else{$expectedHost}
+    if($receipt.SchemaVersion -ne 1 -or $receipt.ServiceName -ne $serviceName -or $receipt.ImagePath -ne $image -or $receipt.HostSha256 -ne $hostPin) {throw 'Installation ownership mismatch'}
     $key=Get-ItemProperty -LiteralPath ('HKLM:\SYSTEM\CurrentControlSet\Services\'+$serviceName)
     if($key.ImagePath -ne $image -or $key.ObjectName -ne 'LocalSystem') {throw 'Service identity changed; no action taken'}
-    if((Get-FileHash -LiteralPath (Join-Path $Root 'ClassicDeskShell.exe')).Hash -ne $expectedHost) {throw 'Service executable changed'}
+    if((Get-FileHash -LiteralPath (Join-Path $Root 'ClassicDeskShell.exe')).Hash -ne $hostPin) {throw 'Service executable changed'}
     return $receipt
 }
 
-if($Action -in @('Validate','InstallDisabled')) {
+if($Action -in @('Validate','InstallDisabled','StageUpdate')) {
     if(-not $Bundle){throw 'Bundle is required'}
     $Bundle=[IO.Path]::GetFullPath($Bundle).TrimEnd('\')
     $plan=Read-Bundle $Bundle
@@ -130,10 +131,20 @@ if($Action -eq 'Inspect') {
 $identity=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if(-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {throw 'Windows administrator confirmation is required; no changes made'}
 
-if($Action -eq 'InstallDisabled') {
-    if(Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {throw 'A service with this name already exists; not taking ownership'}
+if($Action -in @('InstallDisabled','StageUpdate')) {
+    $previousRoot=$null;$previousReceipt=$null
+    if($Action -eq 'StageUpdate') {
+        if(-not $Installation){throw 'Current owned installation is required for an update'}
+        $previousRoot=[IO.Path]::GetFullPath($Installation).TrimEnd('\')
+        $previousReceipt=Read-OwnedInstall $previousRoot $true
+        if($previousReceipt.OwnerSid -ne $plan.OwnerSid -or
+           ($previousReceipt.Source.AppliedProfile | ConvertTo-Json -Compress -Depth 8) -ne ($plan.Source.AppliedProfile | ConvertTo-Json -Compress -Depth 8)) {throw 'Update must retain the installed owner and applied layout'}
+        $beforeService=Get-CimInstance Win32_Service -Filter "Name='ClassicDeskShell'"
+        if($beforeService.StartMode -ne 'Auto' -or $beforeService.State -ne 'Running'){throw 'This update requires the reviewed automatic running service'}
+        if($previousReceipt.RuntimeManifest -ne '49C4EF0FB577AC4D053973F46FADD4B3F8AF6948863E63FDCD8B3E3AD5EAF423'){throw 'Unreviewed previous runtime'}
+    } elseif(Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {throw 'A service with this name already exists; not taking ownership'}
     $Installation=Join-Path $serviceBase ([guid]::NewGuid().ToString('N'))
-    if(-not $PSCmdlet.ShouldProcess($Installation,'Install verified ClassicDesk service disabled; do not start')) {return}
+    if(-not $PSCmdlet.ShouldProcess($Installation,'Prepare protected service files; update only next startup when upgrading; never stop or start the current engine')) {return}
     Ensure-ProtectedDirectory $base;Ensure-ProtectedDirectory $serviceBase;Ensure-ProtectedDirectory $Installation
     foreach($item in $plan.Files) {
         $source=Inside $Bundle $item.Path;$target=Inside $Installation $item.Path
@@ -159,11 +170,20 @@ if($Action -eq 'InstallDisabled') {
     Assert-SourceCurrent $plan
     $image='"'+(Join-Path $Installation 'ClassicDeskShell.exe')+'" --service'
     $receipt=[ordered]@{SchemaVersion=1;ServiceName=$serviceName;ImagePath=$image;HostSha256=$expectedHost;RuntimeManifest=$expectedRuntime;BundleSha256=$ExpectedBundleHash;OwnerSid=$plan.OwnerSid;Source=$plan.Source;Files=$plan.Files;InstalledUtc=[DateTime]::UtcNow;Status='installed-disabled';ServiceStarted=$false;UnifiedMachineLayout=$true}
+    if($previousRoot){$receipt.PreviousInstallation=$previousRoot;$receipt.Status='staged-next-boot';$receipt.PreviousProcessId=$beforeService.ProcessId}
     $receiptPath=Join-Path $Installation 'install-record.json'
     [IO.File]::WriteAllText($receiptPath,($receipt | ConvertTo-Json -Depth 10),[Text.UTF8Encoding]::new($false));Set-ProtectedAcl $receiptPath $false
-    New-Service -Name $serviceName -BinaryPathName $image -DisplayName 'ClassicDesk Shell Loader' -Description 'ClassicDesk verified shell components; settings window is not required. Disable startup to recover on the next boot.' -StartupType Disabled -DependsOn EventLog | Out-Null
+    if($previousRoot) {
+        $null=Read-OwnedInstall $previousRoot $true
+        $current=Get-CimInstance Win32_Service -Filter "Name='ClassicDeskShell'"
+        if($current.ProcessId -ne $beforeService.ProcessId -or $current.State -ne 'Running' -or $current.StartMode -ne 'Auto'){throw 'Service changed during staging; startup path unchanged'}
+        $change=Invoke-CimMethod -InputObject $current -MethodName Change -Arguments @{PathName=$image}
+        if($change.ReturnValue -ne 0){throw "SCM startup update failed: $($change.ReturnValue)"}
+    } else {
+        New-Service -Name $serviceName -BinaryPathName $image -DisplayName 'ClassicDesk Shell Loader' -Description 'ClassicDesk verified shell components; settings window is not required. Disable startup to recover on the next boot.' -StartupType Disabled -DependsOn EventLog | Out-Null
+    }
     $null=Read-OwnedInstall $Installation
-    [pscustomobject]@{Installation=$Installation;Status='installed-disabled';ServiceStarted=$false};return
+    [pscustomobject]@{Installation=$Installation;Status=$receipt.Status;ServiceStarted=$false;PreviousInstallation=$previousRoot};return
 }
 
 if(-not $Installation){throw 'An explicit owned Installation is required'}

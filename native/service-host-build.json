@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "hostVersion": "0.11.13-dev",
+  "hostVersion": "0.11.14-dev",
   "architecture": "i686-w64-mingw32",
   "engineVersion": "1.7.3",
   "toolchain": "windhawk-compiler-1.6",
-  "sha256": "1abc2cf83f340ce243313294efd7443b9f33a484f3beb2a37823cc3886c73545",
+  "sha256": "14603cc429e3a109aad6133e163131dcec890f2f8f7d614554b435ce2468a67d",
   "bytes": 808448,
-  "runtimeManifest": "49c4ef0fb577ac4d053973f46fadd4b3f8af6948863e63fdcd8b3e3ad5eaf423",
+  "runtimeManifest": "02fb7d1f8fd886cbef1569da87f481acd433b1e8c8bd064a4b7eed66a253fa2c",
   "sources": [
     {
       "path": "native/shell-service.cpp",

@@ -105,11 +105,12 @@ bool IsDesktop(HWND window) {
     GetClassNameW(window,name,ARRAYSIZE(name));
     return !_wcsicmp(name,L"Progman") || !_wcsicmp(name,L"WorkerW");
 }
+bool IsExpanded(HWND window);
 ClassicDeskAppearance::VisibleApps VisibleApplications(HWND& application) {
     using namespace ClassicDeskAppearance;
     MONITORINFO monitor{sizeof(monitor)};
     if(!GetMonitorInfoW(MonitorFromWindow(taskbar,MONITOR_DEFAULTTONEAREST),&monitor)) return VisibleApps::Unknown;
-    struct Scan { RECT work; HWND found=nullptr; bool uncertain=false; } scan{monitor.rcWork};
+    struct Scan { RECT work; HWND found=nullptr; HWND expanded=nullptr; bool uncertain=false; } scan{monitor.rcWork};
     BOOL completed=EnumWindows([](HWND window,LPARAM value)->BOOL {
         auto& scan=*reinterpret_cast<Scan*>(value);
         if(!IsWindowVisible(window) || IsIconic(window) || IsDesktop(window) || IsShellSurface(window)) return TRUE;
@@ -120,9 +121,14 @@ ClassicDeskAppearance::VisibleApps VisibleApplications(HWND& application) {
         RECT frame{},visible{};
         if(!GetWindowRect(window,&frame)) {scan.uncertain=true;return TRUE;}
         if(!IntersectRect(&visible,&frame,&scan.work)) return TRUE;
-        scan.found=window;return FALSE;
+        if(!scan.found) scan.found=window;
+        // EnumWindows follows Z order. Keep scanning behind ordinary windows
+        // and choose the first expanded application as the colour source.
+        if(IsExpanded(window)) {scan.expanded=window;return FALSE;}
+        return TRUE;
     },reinterpret_cast<LPARAM>(&scan));
-    application=scan.found;
+    application=scan.expanded ? scan.expanded : scan.found;
+    if(scan.expanded) return VisibleApps::ExpandedPresent;
     if(scan.found) return VisibleApps::Present;
     return completed && !scan.uncertain ? VisibleApps::None : VisibleApps::Unknown;
 }
@@ -225,14 +231,15 @@ void RefreshState() {
     Surface surface=IsShellSurface(foreground) ? Surface::ShellFlyout :
         hidden ? Surface::Unknown : IsDesktop(foreground) ? Surface::Desktop : Surface::Application;
     auto apps=VisibleApps::Unknown;
-    if(surface==Surface::Unknown || surface==Surface::ShellFlyout) {
-        // Focus can stay on the taskbar after minimize. Resolve the top visible
-        // app so a remaining normal window also restores transparency.
+    if(surface!=Surface::Desktop) {
+        // A foreground popup/ordinary app can sit over a maximized browser.
+        // Resolve the expanded background before deciding opacity or colour.
         HWND visible=nullptr;
         apps=VisibleApplications(visible);
         if(visible) { foreground=visible;surface=Surface::Application; }
     }
-    if(surface==Surface::Application && IsExpanded(foreground)) surface=Surface::ExpandedApplication;
+    if(apps==VisibleApps::ExpandedPresent) surface=Surface::ExpandedApplication;
+    else if(surface==Surface::Application && IsExpanded(foreground)) surface=Surface::ExpandedApplication;
     auto backdrop=BackgroundFor(surface,apps);
     if(backdrop==Backdrop::Preserve) return;
     bool opaque=backdrop==Backdrop::Opaque;
@@ -287,6 +294,7 @@ void CALLBACK WindowEvent(HWINEVENTHOOK,DWORD event,HWND window,LONG object,LONG
     Change change=event==EVENT_SYSTEM_FOREGROUND ? Change::Foreground :
         (event==EVENT_SYSTEM_MINIMIZESTART || event==EVENT_SYSTEM_MINIMIZEEND) ? Change::Minimize :
         (event==EVENT_OBJECT_SHOW || event==EVENT_OBJECT_HIDE) ? Change::Visibility :
+        event==EVENT_OBJECT_LOCATIONCHANGE ? Change::Geometry :
         event==EVENT_OBJECT_DESTROY ? Change::Destroyed : Change::Other;
     if(!NeedsRefresh(change,window==foreground || IsDesktop(window),
         GetAncestor(window,GA_ROOT)==window,window==lastApplicationWindow.load())) return;

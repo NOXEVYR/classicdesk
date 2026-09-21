@@ -1,9 +1,11 @@
 using Microsoft.Win32;
 using System.Runtime.InteropServices;
+using System.IO;
+using System.Text.Json;
 
 namespace ClassicDesk;
 
-public sealed record ShellServiceObservation(bool Registered, int StartMode, uint State, string ImagePath);
+public sealed record ShellServiceObservation(bool Registered, int StartMode, uint State, string ImagePath, bool UpdatePending = false);
 
 /// <summary>Read-only SCM observation, no process or registry mutations.</summary>
 public static class ShellServiceStatus
@@ -29,7 +31,21 @@ public static class ShellServiceStatus
             }
             finally { CloseServiceHandle(manager); }
         }
-        return new(true, key.GetValue("Start") is int start ? start : 0, state, key.GetValue("ImagePath") as string ?? "");
+        var image = key.GetValue("ImagePath") as string ?? "";
+        return new(true, key.GetValue("Start") is int start ? start : 0, state, image, PendingUpdate(image));
+    }
+    static bool PendingUpdate(string image)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(image, "^\"([^\"]+\\\\ClassicDeskShell\\.exe)\" --service$");
+        if (!match.Success) return false;
+        var root = Path.GetDirectoryName(Path.GetFullPath(match.Groups[1].Value))!;
+        var prefix = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClassicDesk", "ShellService") + Path.DirectorySeparatorChar;
+        if (!root.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return false;
+        var receipt = Path.Combine(root, "install-record.json");
+        WindowsShellActivationHost.RejectReparse(receipt);
+        if (!File.Exists(receipt)) return false;
+        using var json = JsonDocument.Parse(WindowsShellActivationHost.ReadBounded(receipt, 2 * 1024 * 1024));
+        return json.RootElement.TryGetProperty("PreviousInstallation", out _) && !File.Exists(Path.Combine(root, "service-state.ini"));
     }
     public static void RequireAbsent()
     {
