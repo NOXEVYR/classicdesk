@@ -16,9 +16,9 @@
 
 固定 Windhawk 1.7.3 源码既有[服务模式](https://github.com/ramensoftware/windhawk/blob/c165997c54e71dad897460232d595db7cf2c06ab/src/windhawk/app/service.cpp)，也有[进程创建时的注入路径](https://github.com/ramensoftware/windhawk/blob/c165997c54e71dad897460232d595db7cf2c06ab/src/windhawk/engine/new_process_injector.cpp)。服务本身仍包含新进程扫描；早期路径依赖进程创建链已被接入。由此不能推断“增加自动服务就保证首次显示正确”。
 
-现有 ClassicDesk 宿主管理的是便携引擎进程、个人配置与恢复事务，尚未实现系统级加载的安装、身份核验和恢复。不得直接把开发目录中的可写二进制注册为高权限服务，也不得跳过当前增强的事务恢复。尚未安装服务、修改 Winlogon/Shell 或注册系统外壳扩展。
+此前 ClassicDesk 宿主管理的是便携引擎进程、个人配置与恢复事务。系统级安装不能直接把开发目录中的可写二进制注册为高权限服务；旧事务必须保留，并防止服务和便携引擎重复加载。
 
-进一步核对固定版本：服务会启动用户会话中的 `-tray-only` 进程，仅隐藏托盘并不会取消该进程；不能在未测量前宣称换成服务不增加占用。引擎的进程创建钩子只覆盖已经接入的父进程；默认过滤表允许部分登录链进程被引擎接入，但模块另有关键进程保护。不能只开放更多进程就视为已解决首屏加载。Windows 的[自动服务启动顺序](https://learn.microsoft.com/en-us/windows/win32/services/automatically-starting-services)本身也不是此应用首次绘制的验收证据。当前不据此扩大本机注入范围。
+进一步核对固定版本：上游服务会启动用户会话中的 `-tray-only` 进程，仅隐藏托盘并不会取消该进程；不能在未测量前宣称换成服务不增加占用。引擎的进程创建钩子只覆盖已经接入的父进程；默认过滤表允许部分登录链进程被引擎接入，但模块另有关键进程保护。不能只开放更多进程就视为已解决首屏加载。Windows 的[自动服务启动顺序](https://learn.microsoft.com/en-us/windows/win32/services/automatically-starting-services)本身也不是此应用首次绘制的验收证据。
 
 ## 必须达到的验收条件
 
@@ -28,4 +28,29 @@
 4. 模块失败、符号不匹配或 Windows 更新后，有明确诊断与独立恢复入口；未知结果不得标为“已应用”。
 5. 分开测量系统启动时间、空闲资源与窗口切换开销。没有“零占用”或未经实测的“首帧已完成”承诺。
 
-下一阶段交付是具有安装/禁用/恢复能力的外壳加载实现及上述开机实测证据。当前只完成原生初始化前置修正；开机加载架构仍未交付。
+## 0.11.13 开机服务（2026-09-21）
+
+用户确认本机只有一个使用者，使用整机统一布局。现已安装 `ClassicDeskShell` 系统服务，设置为自动、非延迟启动；本次没有启动服务，也没有重启 Explorer。首次启动和首屏效果等待下一次重启验收。
+
+- 原生 32 位 SCM 宿主直接调用固定 Windhawk 1.7.3 的全局引擎 API，不启动设置窗口或额外托盘程序。引擎仍有一秒一次的新进程增量检查；真实资源占用尚待服务运行后测量。
+- 开放固定路径的 winlogon、userinit、Explorer 和 StartMenuExperienceHost 作为进程创建链。模块配置仍仅匹配 Explorer/开始菜单宿主，禁用关键进程模块匹配；不替换 Winlogon/Shell 注册表入口。
+- 运行代码和模块规则复制到 Program Files 独立版本目录，仅管理员和 SYSTEM 可写；当前用户仅可修改符号及模块缓存目录。启动前检查固定资产摘要、路径和 ACL。
+- 准备时从已应用事务复制整套规则，校验六项模块配置与该方案一致；不使用编辑草稿替代。旧便携恢复记录保留，新前端阻止旧入口再次启用、恢复或登录补加载。
+- 订阅 Explorer/开始菜单的应用崩溃事件，60 秒内三次触发停止和下次开机停用。此策略已做离线阈值测试，未通过制造真实崩溃验收。
+- 已通过 323 项检查（服务包 13、核心 86、冷切换 20、发布边界 23、宿主 98、前端 83），另有原生生命周期/崩溃阈值测试、可重复构建检查及安装后全部 40 个文件和受保护路径的只读检查。服务注册成功不等于六项模块加载成功，更不等于首次显示达标。
+
+### 管理与恢复
+
+`scripts/Install-ShellService.ps1` 提供 `Validate`、`Inspect`、`InstallDisabled`、`EnableNextBoot`、`DisableNextBoot` 和 `RemoveStopped`。安装和启动类型更改需要管理员权限；`Inspect` 只读。准备目录含本机方案、SID 与恢复记录，必须留在本地，不能上传。
+
+```powershell
+# 使用安装回执中的完整目录。停用不卸载本次桌面进程中的模块。
+.\scripts\Install-ShellService.ps1 -Action Inspect -Installation '<已安装目录>'
+.\scripts\Install-ShellService.ps1 -Action DisableNextBoot -Installation '<已安装目录>'
+# 完成重启且服务已停止、停用后，才能删除服务登记；文件和旧事务仍保留。
+.\scripts\Install-ShellService.ps1 -Action RemoveStopped -Installation '<已安装目录>'
+```
+
+安装器按 UTF-8 读取回执，兼容 Windows PowerShell 5.1 的中文目录。原生 GUI 子进程使用 `Start-Process -Wait` 取得真实退出码，不能把 `$LASTEXITCODE` 的旧值当作检查成功。
+
+尚待完成：开机/注销首屏验收、服务模式资源测量、服务布局的更新入口。此版本设置页可以编辑保存草稿，不能将草稿保存宣称为服务规则已更新。

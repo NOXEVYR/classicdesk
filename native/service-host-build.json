@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "hostVersion": "0.11.13-dev",
+  "architecture": "i686-w64-mingw32",
+  "engineVersion": "1.7.3",
+  "toolchain": "windhawk-compiler-1.6",
+  "sha256": "1abc2cf83f340ce243313294efd7443b9f33a484f3beb2a37823cc3886c73545",
+  "bytes": 808448,
+  "runtimeManifest": "49c4ef0fb577ac4d053973f46fadd4b3f8af6948863e63fdcd8b3e3ad5eaf423",
+  "sources": [
+    {
+      "path": "native/shell-service.cpp",
+      "sha256": "107e9e740e283b8bd5b0194b13a4093570677d499fef715a1747e3699cf12572"
+    },
+    {
+      "path": "native/service-session.h",
+      "sha256": "74652d787f2cbe8045880e3108f1e9323ed18852704e57bb16e14fdf9c9d0600"
+    },
+    {
+      "path": "native/Build-Service.ps1",
+      "sha256": "46a5063a1911c2f535feb7efd763ecddb266a89244fc53abebd8c46ccfa35780"
+    }
+  ]
+}

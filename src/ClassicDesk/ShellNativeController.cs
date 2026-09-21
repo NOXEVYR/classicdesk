@@ -30,6 +30,8 @@ public sealed partial class ShellNativeController : IShellNativeController
     readonly ShellActivationCoordinator coordinator;
     readonly ShellLoginRegistration? login;
     readonly SemaphoreSlim gate = new(1, 1);
+    bool SystemHost => host is WindowsShellActivationHost { IsSystemHost: true };
+    void RequirePortableMode() { if (SystemHost) ShellServiceStatus.RequireAbsent(); }
     // Default review scope remains taskbar-only; the panel can opt into other features.
     public static ShellProfile TaskbarOnly(ShellProfile proposal)
     {
@@ -54,6 +56,7 @@ public sealed partial class ShellNativeController : IShellNativeController
     public Task<ShellNativeReview> ReviewAsync(ShellProfile profile) => Serialized(() => Review(profile));
     public Task<ActivationResult> EnableAsync(ShellNativeReview review) => Serialized(() =>
     {
+        RequirePortableMode();
         if (!review.CanEnable || review.EnableTicket is null) throw new InvalidOperationException("请先检查当前方案。");
         if (PendingRecords().Length != 0) throw new InvalidOperationException("出现未结束的切换记录，请先检查恢复状态。");
         var verified = CheckReviewedPackage(packageRoot).Package;
@@ -62,12 +65,14 @@ public sealed partial class ShellNativeController : IShellNativeController
     });
     public Task<ActivationResult> RestoreAsync(ShellNativeReview review) => Serialized(() =>
     {
+        RequirePortableMode();
         if (!review.CanRestore || review.RestoreTicket is null) throw new InvalidOperationException("请先检查恢复记录。");
         login?.SetEnabled(false);
         return coordinator.Restore(review.RestoreTicket);
     });
     public Task<ActivationResult> ResumeAsync(ShellNativeReview review) => Serialized(() =>
     {
+        RequirePortableMode();
         if (!review.CanResume || review.ResumeTicket is null) throw new InvalidOperationException("请先检查已停止的增强。");
         var pending = PendingRecords();
         if (pending.Length != 1 || pending[0].Id != review.ResumeTicket.JournalId) throw new InvalidOperationException("恢复记录已变化。");
@@ -75,11 +80,12 @@ public sealed partial class ShellNativeController : IShellNativeController
         if (pending[0].Package != verified) throw new InvalidOperationException("增强组件已变化。");
         return coordinator.Resume(review.ResumeTicket);
     });
-    public bool SupportsLoginResume => login is not null;
+    public bool SupportsLoginResume => login is not null && (!SystemHost || !ShellServiceStatus.Read().Registered);
     public bool LoginResumeEnabled => login?.Enabled == true;
     public string LoginResumeDetail => login?.LastResult() ?? "";
     public Task SetLoginResumeAsync(bool enabled) => Serialized(() =>
     {
+        if (enabled) RequirePortableMode();
         if (login is null) throw new InvalidOperationException("此实例不管理登录恢复。");
         if (enabled && !Review(new ShellProfile()).IsRunning) throw new InvalidOperationException("先启用并确认增强正在运行，再保持登录恢复。");
         login.SetEnabled(enabled); return true;
@@ -94,6 +100,7 @@ public sealed partial class ShellNativeController : IShellNativeController
     ShellNativeReview Review(ShellProfile profile)
     {
         ArgumentNullException.ThrowIfNull(profile); profile.Validate();
+        if (SystemHost && ShellServiceStatus.Read() is { Registered: true } service) return service.Review();
         var pending = PendingRecords();
         if (!Directory.Exists(packageRoot) && pending.Length != 0)
             return new("有未完成的恢复记录，增强组件缺失",

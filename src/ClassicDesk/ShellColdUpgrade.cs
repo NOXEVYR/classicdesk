@@ -81,6 +81,7 @@ public sealed class WindowsColdUpgradeHost(string journals) : IColdUpgradeHost
     }
     public void RequireCleanShell()
     {
+        ShellServiceStatus.RequireAbsent();
         // Inspect both processes: the positioning component also loads in StartMenuExperienceHost.
         // Access failures are not evidence that a module has gone away.
         foreach (var name in new[] { "explorer", "StartMenuExperienceHost", "windhawk" })

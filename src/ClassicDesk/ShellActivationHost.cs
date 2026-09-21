@@ -58,7 +58,8 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         "AppData/Engine/Mods/64/explorer-frame-classic_1.0.8.dll", "AppData/Engine/Mods/64/explorer-context-menu-classic_1.0.2.dll"];
     string? leaseRoot; int leaseThread;
     ActivationDaemonIdentity? stoppedDuringLease;
-    public static WindowsShellActivationHost CreateForWindows() => new(new WindowsActivationAlignment(), new WindowsActivationEnvironment(), new WindowsActivationProcesses());
+    public bool IsSystemHost { get; private init; }
+    public static WindowsShellActivationHost CreateForWindows() => new(new WindowsActivationAlignment(), new WindowsActivationEnvironment(), new WindowsActivationProcesses()) { IsSystemHost = true };
 
     /// <summary>Read only. Caller chooses the local package and may pin its expected manifest SHA-256.
     /// Only one recognized runtime manifest may exist; ambiguous packages are rejected.</summary>
@@ -434,6 +435,7 @@ public sealed class WindowsActivationEnvironment : IActivationEnvironment
     { "detected" => ActivationPresence.Present, "not-detected" => ActivationPresence.Absent, _ => ActivationPresence.Unknown };
     public ActivationEnvironmentObservation Inspect(ActivationDaemonIdentity? allowedDaemon)
     {
+        ShellServiceStatus.RequireAbsent();
         var snapshot = ShellBackendPlanner.Detect();
         var sab = ClassifyStartAllBack(snapshot.StartAllBackLoaded);
         var identities = new List<string>(); var other = ActivationPresence.Absent;
@@ -474,6 +476,8 @@ public sealed class WindowsActivationProcesses : IActivationProcesses
 {
     public ActivationStartResult Start(VerifiedActivationPackage package, string ownershipToken, Action verifyBeforeStart)
     {
+        try { ShellServiceStatus.RequireAbsent(); }
+        catch (Exception e) { return new(ActivationOutcome.RejectedWithoutChange, null, e.Message); }
         if (Process.GetProcessesByName("windhawk").Any()) return new(ActivationOutcome.RejectedWithoutChange, null, "已有 Windhawk 进程。");
         Process? process = null;
         try

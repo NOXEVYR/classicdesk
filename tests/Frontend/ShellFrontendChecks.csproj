@@ -20,6 +20,8 @@
     <Compile Include="../../src/ClassicDesk/ShellSettingsWindow.cs" Link="ShellSettingsWindow.cs" />
     <Compile Include="../../src/ClassicDesk/ShellNativePanel.cs" Link="ShellNativePanel.cs" />
     <Compile Include="../../src/ClassicDesk/ShellNativeController.cs" Link="ShellNativeController.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellServiceStatus.cs" Link="ShellServiceStatus.cs" />
+    <Compile Include="../../src/ClassicDesk/ShellServiceReview.cs" Link="ShellServiceReview.cs" />
     <Compile Include="../../src/ClassicDesk/ShellActivation.cs" Link="ShellActivation.cs" />
     <Compile Include="../../src/ClassicDesk/ShellActivationHost.cs" Link="ShellActivationHost.cs" />
     <Compile Include="../../src/ClassicDesk/ShellBackendPlan.cs" Link="ShellBackendPlan.cs" />

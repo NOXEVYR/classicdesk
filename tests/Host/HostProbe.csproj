@@ -2,4 +2,5 @@
 <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0-windows</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
 <ItemGroup><Compile Include="../../src/ClassicDesk/ShellActivation.cs" Link="ShellActivation.cs"/><Compile Include="../../src/ClassicDesk/ShellActivationHost.cs" Link="ShellActivationHost.cs"/><Compile Include="../../src/ClassicDesk/ShellProfile.cs" Link="ShellProfile.cs"/><Compile Include="../../src/ClassicDesk/ShellBackendPlan.cs" Link="ShellBackendPlan.cs"/><Compile Include="../../src/ClassicDesk/ShellBackendConfig.cs" Link="ShellBackendConfig.cs"/></ItemGroup>
 <ItemGroup><Compile Include="../../src/ClassicDesk/ShellLoginResume.cs" Link="ShellLoginResume.cs"/></ItemGroup>
+<ItemGroup><Compile Include="../../src/ClassicDesk/ShellServiceStatus.cs" Link="ShellServiceStatus.cs"/></ItemGroup>
 </Project>

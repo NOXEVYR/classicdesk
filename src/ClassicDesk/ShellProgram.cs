@@ -7,6 +7,22 @@ public static class ShellProgram
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--inspect-shell-service")
+        {
+            try { Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(ShellServiceStatus.Read())); return 0; }
+            catch (Exception e) { Console.Error.WriteLine(e.Message); return 1; }
+        }
+        if ((args.Length == 4 && args[0] == "--prepare-shell-service") || (args.Length == 2 && args[0] == "--check-shell-service"))
+        {
+            try
+            {
+                var journals = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassicDesk", "NativeTransactions");
+                var bundle = args[0] == "--prepare-shell-service" ? ShellServicePackage.Prepare(args[1], args[2], args[3], journals) : ShellServicePackage.Verify(args[1]);
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { bundle.State, bundle.ServiceName, Files = bundle.Files.Count, Bytes = bundle.Files.Sum(f => f.Bytes), ServiceCreated = false, EngineStarted = false }));
+                return 0;
+            }
+            catch (Exception e) { Console.Error.WriteLine("启动组件预备失败：" + e.Message); return 1; }
+        }
         if ((args.Length == 4 && args[0] == "--prepare-cold-upgrade") ||
             (args.Length == 2 && args[0] == "--apply-cold-upgrade"))
         {

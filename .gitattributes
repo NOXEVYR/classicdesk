@@ -4,3 +4,4 @@ runtime/*.json text eol=lf
 # Preserve exact native source bytes referenced by the runtime manifest.
 native/*.cpp -text whitespace=cr-at-eol
 native/*.h -text whitespace=cr-at-eol
+native/Build-Service.ps1 -text whitespace=cr-at-eol
