@@ -66,6 +66,71 @@ Test("running old service does not report staged update as applied", () =>
     var review = new ShellServiceObservation(true, 2, 4, "test", true).Review();
     Check(review.Title.Contains("等待重启") && !review.IsRunning && !review.CanEnable && !review.CanRestore && !review.CanResume);
 });
+var installation = Path.Combine(output, "installed-fixture");
+Directory.CreateDirectory(installation);
+foreach (var file in Directory.EnumerateFiles(fixture, "*", SearchOption.AllDirectories))
+{
+    if (Path.GetFileName(file) == "service-package.json") continue;
+    var target = Path.Combine(installation, Path.GetRelativePath(fixture, file));
+    Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target);
+}
+var receiptPath = Path.Combine(installation, "install-record.json");
+File.WriteAllText(receiptPath, JsonSerializer.Serialize(new { bundle.HostSha256, bundle.RuntimeManifest, bundle.OwnerSid, bundle.Source, bundle.Files }));
+var receiptHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(receiptPath)));
+ShellServiceLayoutReview LayoutReview(ShellProfile p) => new(installation, receiptHash, bundle.Source.AppliedProfile, p, false, ShellPresets.Changes(bundle.Source.AppliedProfile, p));
+string NewLayoutFolder() => Path.Combine(output, "layout-" + Guid.NewGuid().ToString("N"));
+Test("layout preparation compiles selected size and keeps original recovery source", () =>
+{
+    var p = bundle.Source.AppliedProfile with { IconSize = 28, TaskbarHeight = 52 };
+    var prepared = ShellServiceLayout.Prepare(LayoutReview(p), NewLayoutFolder());
+    Check(prepared.TargetProfile == p && prepared.Source == bundle.Source && prepared.LayoutSource?.ReceiptSha256 == receiptHash);
+    Check(Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(receiptPath))) == receiptHash);
+});
+Test("layout preparation rejects stale installation receipt", () =>
+{
+    var review = LayoutReview(bundle.Source.AppliedProfile) with { ReceiptSha256 = new('0', 64) };
+    var target = NewLayoutFolder(); Reject(() => ShellServiceLayout.Prepare(review, target)); Check(!Directory.Exists(target));
+});
+Test("layout preparation cannot overwrite an existing folder", () => Reject(() => ShellServiceLayout.Prepare(LayoutReview(bundle.Source.AppliedProfile), fixture)));
+Test("layout preparation rejects invalid dimensions before writing", () =>
+{
+    var target = NewLayoutFolder(); Reject(() => ShellServiceLayout.Prepare(LayoutReview(bundle.Source.AppliedProfile with { IconSize = 100 }), target)); Check(!Directory.Exists(target));
+});
+Test("layout source and target must be paired", () =>
+{
+    Write(bundle with { TargetProfile = bundle.Source.AppliedProfile }); Reject(() => ShellServicePackage.Verify(fixture));
+    Write(bundle with { LayoutSource = new(installation, receiptHash) }); Reject(() => ShellServicePackage.Verify(fixture));
+});
+Test("layout update cannot reseal arbitrary injection rules", () =>
+{
+    var target = NewLayoutFolder(); var prepared = ShellServiceLayout.Prepare(LayoutReview(bundle.Source.AppliedProfile), target);
+    var path = Path.Combine(target, "Runtime/AppData/Engine/Mods/taskbar-start-button-position.ini");
+    File.AppendAllText(path, "\r\n[Mod]\r\nInclude=*\r\n", System.Text.Encoding.Unicode);
+    var modified = prepared with { Files = prepared.Files.Select(f => f.Path.EndsWith("/taskbar-start-button-position.ini") ? f with { Bytes = new FileInfo(path).Length, Sha256 = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))) } : f).ToArray() };
+    File.WriteAllText(Path.Combine(target, "service-package.json"), JsonSerializer.Serialize(modified));
+    Reject(() => ShellServicePackage.Verify(target));
+});
+Test("all presets compile complete six-module service layouts", () =>
+{
+    foreach (var preset in ShellPresets.All)
+    {
+        var target = NewLayoutFolder(); var prepared = ShellServiceLayout.Prepare(LayoutReview(preset.Profile), target);
+        Check(prepared.TargetProfile == preset.Profile);
+        Check(Directory.GetFiles(Path.Combine(target, "Runtime/AppData/Engine/Mods"), "*.ini").Length == 6);
+    }
+});
+Test("disabled taskbar and native explorer choices remain disabled", () =>
+{
+    var p = bundle.Source.AppliedProfile with { SkipTaskbarLayout = true, SkipTaskbarSizing = true, CompactTray = false, TranslucentTaskbar = false, FollowMaximizedTheme = false, ClassicRibbon = false, UseClassicNavigationBar = false, ClassicContextMenu = false };
+    var target = NewLayoutFolder(); ShellServiceLayout.Prepare(LayoutReview(p), target);
+    Check(Directory.GetFiles(Path.Combine(target, "Runtime/AppData/Engine/Mods"), "*.ini").All(f => File.ReadAllText(f).Contains("Disabled=1")));
+});
+Test("staged receipt resolves target separately from recovery profile", () =>
+{
+    var p = bundle.Source.AppliedProfile with { IconSize = 28 };
+    using var doc = JsonDocument.Parse(JsonSerializer.Serialize(new { bundle.Source, TargetProfile = p }));
+    Check(ShellServiceLayout.CurrentProfile(doc.RootElement) == p);
+});
 Check(ShellServicePackage.Verify(fixture).Files.Count == bundle.Files.Count);
 int failed = results.Count(r => !(bool)r.GetType().GetProperty("passed")!.GetValue(r)!);
 var report = JsonSerializer.Serialize(new { passed = results.Count - failed, failed, serviceWrites = 0, engineStarts = 0, checks = results }, new JsonSerializerOptions { WriteIndented = true });

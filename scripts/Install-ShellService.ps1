@@ -1,10 +1,13 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)][ValidateSet('Validate','Inspect','InstallDisabled','StageUpdate','EnableNextBoot','DisableNextBoot','RemoveStopped')][string]$Action,
+    [Parameter(Mandatory)][ValidateSet('Validate','Inspect','InstallDisabled','StageUpdate','StageLayout','EnableNextBoot','DisableNextBoot','RemoveStopped')][string]$Action,
     [string]$Bundle,
     [string]$Installation,
     [string]$ExpectedBundleHash
 )
+# Do not inherit incompatible PowerShell 7 modules when launched by a .NET process.
+$env:PSModulePath=$PSHOME+'\Modules'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $ErrorActionPreference='Stop'
 $serviceName='ClassicDeskShell'
 $expectedHost='14603CC429E3A109AAD6133E163131DCEC890F2F8F7D614554B435CE2468A67D'
@@ -61,7 +64,38 @@ function Read-Bundle([string]$Root) {
     }
     return $plan
 }
+function Assert-LayoutSource($Plan) {
+    if(-not $Plan.LayoutSource -or -not $Plan.TargetProfile){throw 'Layout update requires source and target profile'}
+    $previous=Read-OwnedInstall $Plan.LayoutSource.Installation
+    $receiptPath=Join-Path $Plan.LayoutSource.Installation 'install-record.json'
+    if((Get-FileHash -LiteralPath $receiptPath).Hash -ne $Plan.LayoutSource.ReceiptSha256){throw 'Scheduled layout changed; review again'}
+    if($previous.RuntimeManifest -ne $expectedRuntime -or $previous.OwnerSid -ne $Plan.OwnerSid -or
+       ($previous.Source | ConvertTo-Json -Compress -Depth 10) -ne ($Plan.Source | ConvertTo-Json -Compress -Depth 10)){throw 'Layout update must preserve ownership and original recovery source'}
+    if([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $Plan.OwnerSid){throw 'Update account differs from installation owner'}
+    if($previous.Files.Count -ne $Plan.Files.Count){throw 'Layout update cannot add code or files'}
+    foreach($item in $Plan.Files) {
+        $original=@($previous.Files | Where-Object Path -eq $item.Path)
+        if($original.Count -ne 1){throw 'Unknown layout update file'}
+        $oldFile=Inside $Plan.LayoutSource.Installation $item.Path
+        $newFile=Inside $Bundle $item.Path
+        if($item.Path -match '^Runtime/AppData/Engine/(ModsWritable|Symbols)/'){continue}
+        if((Get-FileHash -LiteralPath $oldFile).Hash -ne $original[0].Sha256){throw 'Installed fixed file changed'}
+        if($item.Path -match '^Runtime/AppData/Engine/Mods/[^/]+\.ini$') {
+            # Preserve code selection, process scope and all execution-policy headers.
+            $oldText=[IO.File]::ReadAllText($oldFile)
+            $newText=[IO.File]::ReadAllText($newFile)
+            $oldParts=$oldText -split '\[Settings\]\r?\n',2
+            $newParts=$newText -split '\[Settings\]\r?\n',2
+            if($oldParts.Count -ne 2 -or $newParts.Count -ne 2 -or
+               ($oldParts[0] -replace '(?m)^Disabled=[01]\r?$','Disabled=') -ne ($newParts[0] -replace '(?m)^Disabled=[01]\r?$','Disabled=') -or
+               $newParts[1] -match '(?m)^\['){throw 'Layout update changed module execution policy'}
+        } elseif($item.Sha256 -ne $original[0].Sha256 -or $item.Bytes -ne $original[0].Bytes){throw 'Layout update changed a fixed asset'}
+    }
+    return $previous
+}
 function Assert-SourceCurrent($Plan) {
+    if($Action -eq 'StageLayout') {$null=Assert-LayoutSource $Plan;return}
+    if($Plan.LayoutSource -or $Plan.TargetProfile){throw 'Use StageLayout for a layout update'}
     if([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $Plan.OwnerSid) {throw 'Install must retain the preparing user identity'}
     $journal=Join-Path $env:LOCALAPPDATA ('ClassicDesk/NativeTransactions/'+([guid]$Plan.Source.JournalId).ToString('N')+'.json')
     Assert-NoLinks $journal
@@ -111,7 +145,7 @@ function Read-OwnedInstall([string]$Root,[bool]$Previous=$false) {
     return $receipt
 }
 
-if($Action -in @('Validate','InstallDisabled','StageUpdate')) {
+if($Action -in @('Validate','InstallDisabled','StageUpdate','StageLayout')) {
     if(-not $Bundle){throw 'Bundle is required'}
     $Bundle=[IO.Path]::GetFullPath($Bundle).TrimEnd('\')
     $plan=Read-Bundle $Bundle
@@ -131,7 +165,7 @@ if($Action -eq 'Inspect') {
 $identity=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if(-not $identity.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {throw 'Windows administrator confirmation is required; no changes made'}
 
-if($Action -in @('InstallDisabled','StageUpdate')) {
+if($Action -in @('InstallDisabled','StageUpdate','StageLayout')) {
     $previousRoot=$null;$previousReceipt=$null
     if($Action -eq 'StageUpdate') {
         if(-not $Installation){throw 'Current owned installation is required for an update'}
@@ -142,10 +176,20 @@ if($Action -in @('InstallDisabled','StageUpdate')) {
         $beforeService=Get-CimInstance Win32_Service -Filter "Name='ClassicDeskShell'"
         if($beforeService.StartMode -ne 'Auto' -or $beforeService.State -ne 'Running'){throw 'This update requires the reviewed automatic running service'}
         if($previousReceipt.RuntimeManifest -ne '49C4EF0FB577AC4D053973F46FADD4B3F8AF6948863E63FDCD8B3E3AD5EAF423'){throw 'Unreviewed previous runtime'}
+    } elseif($Action -eq 'StageLayout') {
+        if(-not $Installation -or [IO.Path]::GetFullPath($Installation).TrimEnd('\') -ne $plan.LayoutSource.Installation){throw 'Layout source installation mismatch'}
+        $previousRoot=$plan.LayoutSource.Installation
+        $previousReceipt=Assert-LayoutSource $plan
+        $beforeService=Get-CimInstance Win32_Service -Filter "Name='ClassicDeskShell'"
+        if($beforeService.State -ne 'Running' -or $beforeService.StartMode -ne 'Auto'){throw 'Layout staging requires an automatic running service'}
     } elseif(Get-Service -Name $serviceName -ErrorAction SilentlyContinue) {throw 'A service with this name already exists; not taking ownership'}
     $Installation=Join-Path $serviceBase ([guid]::NewGuid().ToString('N'))
     if(-not $PSCmdlet.ShouldProcess($Installation,'Prepare protected service files; update only next startup when upgrading; never stop or start the current engine')) {return}
     Ensure-ProtectedDirectory $base;Ensure-ProtectedDirectory $serviceBase;Ensure-ProtectedDirectory $Installation
+    # Serialize concurrent staging attempts under the protected installation root.
+    $updateLock=[IO.File]::Open((Join-Path $serviceBase 'update.lock'),'OpenOrCreate','ReadWrite','None')
+    try {
+    Assert-SourceCurrent $plan
     foreach($item in $plan.Files) {
         $source=Inside $Bundle $item.Path;$target=Inside $Installation $item.Path
         $parent=[IO.Path]::GetDirectoryName($target)
@@ -170,11 +214,13 @@ if($Action -in @('InstallDisabled','StageUpdate')) {
     Assert-SourceCurrent $plan
     $image='"'+(Join-Path $Installation 'ClassicDeskShell.exe')+'" --service'
     $receipt=[ordered]@{SchemaVersion=1;ServiceName=$serviceName;ImagePath=$image;HostSha256=$expectedHost;RuntimeManifest=$expectedRuntime;BundleSha256=$ExpectedBundleHash;OwnerSid=$plan.OwnerSid;Source=$plan.Source;Files=$plan.Files;InstalledUtc=[DateTime]::UtcNow;Status='installed-disabled';ServiceStarted=$false;UnifiedMachineLayout=$true}
+    if($plan.TargetProfile){$receipt.TargetProfile=$plan.TargetProfile;$receipt.LayoutSource=$plan.LayoutSource}
     if($previousRoot){$receipt.PreviousInstallation=$previousRoot;$receipt.Status='staged-next-boot';$receipt.PreviousProcessId=$beforeService.ProcessId}
     $receiptPath=Join-Path $Installation 'install-record.json'
     [IO.File]::WriteAllText($receiptPath,($receipt | ConvertTo-Json -Depth 10),[Text.UTF8Encoding]::new($false));Set-ProtectedAcl $receiptPath $false
     if($previousRoot) {
-        $null=Read-OwnedInstall $previousRoot $true
+        $null=Read-OwnedInstall $previousRoot ($Action -eq 'StageUpdate')
+        Assert-SourceCurrent $plan
         $current=Get-CimInstance Win32_Service -Filter "Name='ClassicDeskShell'"
         if($current.ProcessId -ne $beforeService.ProcessId -or $current.State -ne 'Running' -or $current.StartMode -ne 'Auto'){throw 'Service changed during staging; startup path unchanged'}
         $change=Invoke-CimMethod -InputObject $current -MethodName Change -Arguments @{PathName=$image}
@@ -184,6 +230,7 @@ if($Action -in @('InstallDisabled','StageUpdate')) {
     }
     $null=Read-OwnedInstall $Installation
     [pscustomobject]@{Installation=$Installation;Status=$receipt.Status;ServiceStarted=$false;PreviousInstallation=$previousRoot};return
+    } finally {$updateLock.Dispose()}
 }
 
 if(-not $Installation){throw 'An explicit owned Installation is required'}

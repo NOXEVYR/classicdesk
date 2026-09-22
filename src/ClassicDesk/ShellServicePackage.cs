@@ -8,9 +8,12 @@ using System.Text.Json;
 namespace ClassicDesk;
 
 public sealed record ShellServiceFile(string Path, long Bytes, string Sha256);
+public sealed record ShellServiceLayoutSource(string Installation, string ReceiptSha256);
 public sealed record ShellServiceBundle(int SchemaVersion, string State, string ServiceName, string OwnerSid,
     ColdUpgradeSource Source, string RuntimeManifest, string HostSha256, string EngineInclude,
-    IReadOnlyList<ShellServiceFile> Files);
+    IReadOnlyList<ShellServiceFile> Files,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] ShellProfile? TargetProfile = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] ShellServiceLayoutSource? LayoutSource = null);
 
 /// <summary>Offline, account-specific preparation. Does not register, start or stop a service,
 /// write the registry, change the live runtime, or change startup preferences.</summary>
@@ -104,7 +107,12 @@ public static class ShellServicePackage
         if (!actual.SetEquals(seen) || Hash(Path.Combine(folder, "ClassicDeskShell.exe")) != ReviewedHostSha256)
             throw new InvalidDataException("启动组件包含遗漏或额外文件。");
         ShellNativeController.CheckReviewedPackage(Path.Combine(folder, "Runtime"));
-        VerifyConfiguration(Path.Combine(folder, "Runtime"), bundle.Source.AppliedProfile);
+        if ((bundle.TargetProfile is null) != (bundle.LayoutSource is null))
+            throw new InvalidDataException("开机方案更新缺少来源或目标。");
+        if (bundle.LayoutSource is not null && (!Path.IsPathFullyQualified(bundle.LayoutSource.Installation) ||
+            !System.Text.RegularExpressions.Regex.IsMatch(bundle.LayoutSource.ReceiptSha256, "^[A-F0-9]{64}$")))
+            throw new InvalidDataException("开机方案来源记录无效。");
+        VerifyConfiguration(Path.Combine(folder, "Runtime"), bundle.TargetProfile ?? bundle.Source.AppliedProfile);
         return bundle;
     }
     public static void VerifyConfiguration(string runtime, ShellProfile profile)

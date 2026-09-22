@@ -7,6 +7,26 @@ public static class ShellProgram
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--disable-shell-service")
+        {
+            try
+            {
+                ShellServiceLayout.DisableCurrentAsync().GetAwaiter().GetResult();
+                MessageBox.Show("已停用下次开机增强。当前桌面保持原布局，请保存工作后自行重启。方案与安装记录已保留。", "ClassicDesk · 开机增强已停用"); return 0;
+            }
+            catch (Exception e) { MessageBox.Show(e.Message, "ClassicDesk · 停用未完成"); return 1; }
+        }
+        if (args.Length == 1 && args[0] == "--inspect-service-layout")
+        {
+            try
+            {
+                var root = ShellServiceLayout.Installation(ShellServiceStatus.Read());
+                using var receipt = System.Text.Json.JsonDocument.Parse(WindowsShellActivationHost.ReadBounded(System.IO.Path.Combine(root, "install-record.json"), 2 * 1024 * 1024));
+                var review = ShellServiceLayout.ReviewAsync(ShellServiceLayout.CurrentProfile(receipt.RootElement)).GetAwaiter().GetResult();
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { review.Installation, review.ReceiptSha256, review.Pending, Changes = review.Changes.Count, HostSettingsChanged = false })); return 0;
+            }
+            catch (Exception e) { Console.Error.WriteLine(e.Message); return 1; }
+        }
         if (args.Length == 1 && args[0] == "--inspect-shell-service")
         {
             try { Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(ShellServiceStatus.Read())); return 0; }
@@ -97,7 +117,11 @@ public static class ShellProgram
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\ClassicDesk.NativeSettings.Activate.v5");
         if (!first) { activate.Set(); return 0; }
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
-        var window = new ShellSettingsWindow(inspectPlan: profile => Task.Run(() => ShellBackendPlanner.Describe(profile)), manageNative: ShellNativeController.Open);
+        var window = new ShellSettingsWindow(inspectPlan: profile => Task.Run(() => ShellBackendPlanner.Describe(profile)), manageNative: (owner, profile) =>
+        {
+            if (ShellServiceStatus.Read().Registered) new ShellServicePanel(profile) { Owner = owner }.ShowDialog();
+            else ShellNativeController.Open(owner, profile);
+        });
         app.MainWindow = window;
         app.DispatcherUnhandledException += (_, e) => { MessageBox.Show(window, e.Exception.Message, "ClassicDesk · 操作未完成"); e.Handled = true; };
         var closed = false; window.Closed += (_, _) => closed = true;

@@ -5,7 +5,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.11.14-dev</Version>
+    <Version>0.11.15-dev</Version>
     <AssemblyName>ClassicDesk</AssemblyName>
     <StartupObject>ClassicDesk.ShellProgram</StartupObject>
     <ApplicationIcon>Assets/ClassicDesk.ico</ApplicationIcon>
@@ -18,6 +18,9 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="ShellServiceLayout.cs;ShellServicePanel.cs" />
+    <Content Include="../../scripts/Install-ShellService.ps1" Link="Install-ShellService.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../scripts/Disable-ClassicDesk-NextBoot.vbs" Link="Disable-ClassicDesk-NextBoot.vbs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Include="ShellProfileLibrary.cs;ShellLoginResume.cs;ShellColdUpgrade.cs;ShellServicePackage.cs;ShellServiceStatus.cs;ShellServiceReview.cs" />
     <Compile Include="AppIcons.cs;ShellPreview.cs;ShellProfile.cs;ShellSettingsWindow.cs;ShellBackendPlan.cs;ShellBackendConfig.cs;ShellProgram.cs;ShellActivation.cs;ShellActivationHost.cs;ShellNativeController.cs;ShellNativePanel.cs" />
     <Resource Include="Assets/ClassicDesk.ico" />
