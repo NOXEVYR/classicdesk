@@ -1,10 +1,10 @@
 # ClassicDesk · Windows 桌面布局与外观工具
 
-当前源码及本机设置程序为 **0.11.15-dev**，新增[开机方案更新面板](docs/SERVICE_LAYOUT.md)。本机外壳组件继续使用已验证的 **0.11.14**，重启后服务自动运行、六项增强模块加载且动态背景初始化正常；**用户已确认后台最大化窗口与前台小窗口叠放、最小化后的透明切换正常**；公开下载仍为 **0.10.0-preview**。开发版加入[本地方案库](docs/PROFILE_LIBRARY.md)、[按需启用功能](docs/FEATURE_SELECTION.md)、透明背景及紧凑系统托盘。方案可命名保存、更新、复制、重命名和归档；任务栏布局、尺寸、资源管理器和右键菜单可分别选择应用。
+当前源码及本机设置程序为 **0.11.15-preview**，新增[开机方案更新面板](docs/SERVICE_LAYOUT.md)。本机外壳组件继续使用已验证的 **0.11.14**，重启后服务自动运行、六项增强模块加载且动态背景初始化正常；**用户已确认后台最大化窗口与前台小窗口叠放、最小化后的透明切换正常**；公开下载已更新为 **0.11.15-preview**。开发版加入[本地方案库](docs/PROFILE_LIBRARY.md)、[按需启用功能](docs/FEATURE_SELECTION.md)、透明背景及紧凑系统托盘。方案可命名保存、更新、复制、重命名和归档；任务栏布局、尺寸、资源管理器和右键菜单可分别选择应用。
 
 最新确认的规则是：**本屏仍有最大化或全屏背景窗口时任务栏不透明，点击其上方的小窗口也保持不透明；没有这类背景窗口时透明**，保留浅色/深色配色。0.11.11 已纠正之前把所有前台应用都设为不透明的误解，并保留最小化/隐藏事件和早期初始化修正；重启后已通过冷切换启用 0.11.12，用户确认普通窗口、最大化、还原、最小化均按规则自动切换，无需再点桌面。48 DIP 栏高、24 DIP 应用图标、开始靠左、应用居中及右侧紧凑结构保留。详见[任务栏行为与验收记录](docs/TASKBAR_BEHAVIOR.md)。
 
-**开发版仍有已知故障，尚不能完整替代 StartAllBack。** 0.11.8 组件热重载曾导致 Explorer 和开始菜单进程崩溃；之后一次干净启动成功不代表该缺陷已修复。用户要求组件随外壳加载、任务栏首次出现即生效，已撤下不符合要求的登录补加载脚本。0.11.13 已实现[受保护的开机服务安装、停用和冲突检查](docs/SHELL_STARTUP.md)，本机已登记自动启动，本次没有启动服务或重启 Explorer。冷启动首屏、服务模式占用与长期稳定性仍待验收。公开下载不包含这些新增功能或第三方增强运行组件。
+**开发版仍有已知故障，尚不能完整替代 StartAllBack。** 0.11.8 组件热重载曾导致 Explorer 和开始菜单进程崩溃；之后一次干净启动成功不代表该缺陷已修复。用户要求组件随外壳加载、任务栏首次出现即生效，已撤下不符合要求的登录补加载脚本。0.11.13 已实现[受保护的开机服务安装、停用和冲突检查](docs/SHELL_STARTUP.md)，本机已登记自动启动，本次没有启动服务或重启 Explorer。冷启动首屏、服务模式占用与长期稳定性仍待验收。公开下载包含新版设置界面及管理代码，未捆绑第三方增强运行组件。
 
 0.11.12 增加[旧组件退出后的版本切换](docs/COLD_UPGRADE.md)，沿用已应用方案并拒绝热重载；该入口不等于开机加载已完成。
 
@@ -14,9 +14,11 @@
 
 设置页顶部提供 Win10 方案、Win11 方案、紧凑办公、宽松布局四个入口；右上角选择皮肤。侧栏新增独立皮肤资料库，包含原生浅色、雾白极简、星空二次元、樱月二次元、云海二次元、月夜二次元。新增三款二次元背景均无人物。
 
-本地开发版已采用左侧分类导航、固定预览、分组设置和底部操作区。本次以 0.10.0-preview 预览版同步源码及 Windows 运行包，保留历史版本。
+本地开发版已采用左侧分类导航、固定预览、分组设置和底部操作区。本次发布 0.11.15-preview 预览版程序包与可重建源码包，保留历史版本。
 
 ## 本版新增
+
+- **开机方案管理**：对比当前编辑方案与已保存的开机规则，明确提交后下次启动生效；提供下次开机停用及独立恢复入口。需要已安装配套服务。
 
 - **布局与皮肤**：四种布局、六款皮肤自由组合，随 JSON 保存和导入导出。旧版星空方案在内存中拆分为布局标识与皮肤，保留每项功能参数，保存前不改写旧文件。
 - **方案管理**：查看三类设置摘要及修改项；导入 JSON、导出当前草稿、载入上一份保存记录。
@@ -28,7 +30,7 @@
 
 以上功能用于方案编辑与预览，不会自动修改 Windows，也不包含 StartAllBack 的程序、图标或增强引擎。系统启用仍通过“系统应用检查”进入原有流程。
 
-[← 返回 portfolio](https://github.com/turnsolesama/portfolio) · [Releases · v0.10.0-preview](https://github.com/turnsolesama/classicdesk/releases/tag/v0.10.0-preview)
+[← 返回 portfolio](https://github.com/NOXEVYR/portfolio) · [Releases · v0.11.15-preview](https://github.com/NOXEVYR/classicdesk/releases/tag/v0.11.15-preview)
 
 ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管理器与右键菜单的外观和布局调整。当前公开预览版提供布局与皮肤管理、三类设置编辑与原创参数图示，采用 C# / WPF 实现。
 
@@ -59,13 +61,13 @@ ClassicDesk 定位为 Windows 桌面修改工具，面向任务栏、资源管�
 
 ## 下载
 
-[Windows x64 预览版 ZIP](https://github.com/turnsolesama/classicdesk/releases/download/v0.10.0-preview/ClassicDesk-0.10.0-preview-windows-x64.zip) · [SHA-256 校验](https://github.com/turnsolesama/classicdesk/releases/download/v0.10.0-preview/SHA256SUMS.txt)
+[Windows x64 · 0.11.15-preview ZIP](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.15-preview/ClassicDesk-0.11.15-preview-windows-x64.zip) · [SHA-256 校验](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.15-preview/SHA256SUMS.txt)
 
 ## 运行
 
 1. 使用 Windows 11 x64。
 2. 安装 [Microsoft .NET 8 Desktop Runtime x64](https://dotnet.microsoft.com/en-us/download/dotnet/8.0)。发布包复用系统运行时，不包含 SDK 或 .NET 运行时。
-3. 解压下载的前端 ZIP，运行 `app/ClassicDesk.exe`。保留旁边的 DLL、deps.json 和 runtimeconfig.json。
+3. 解压下载的前端 ZIP，运行 `app/ClassicDesk.exe`。保留整个 app 目录，包括 DLL、JSON、开机管理脚本和恢复入口。
 
 设置窗口关闭后前端退出，没有自有 Dock、托盘驻留或自动启用任务。未来真正启用增强时，独立增强引擎仍需运行；前端退出不等于增强引擎退出。
 
@@ -107,13 +109,13 @@ dotnet publish src/ClassicDesk/ClassicDesk.csproj -c Release --no-self-contained
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test.ps1
 ```
 
-`scripts/Test.ps1` 运行四组基础检查：事务核心、真实文件加 fake 系统接口、WPF 离屏交互、缺组件发布边界。另有 `tests/ColdUpgrade` 冷切换测试与 `tests/ShellService` 离线服务包测试；后者需要本机已核对的预备包和全新测试输出目录。测试不显示应用窗口、不调用真实注册表写入、不启动增强引擎。测试生成的本地报告与夹具不应提交到仓库；它们可能含运行机器路径。
+`scripts/Test.ps1` 运行事务核心、真实文件加 fake 系统接口、WPF 离屏交互、缺组件发布边界及开机方案界面检查。另有 `tests/ColdUpgrade` 冷切换测试与 `tests/ShellService` 离线服务包测试；后者需要本机已核对的预备包和全新测试输出目录。测试不显示应用窗口、不调用真实注册表写入、不启动增强引擎。测试生成的本地报告与夹具不应提交到仓库；它们可能含运行机器路径。
 
 ## 源码结构
 
 - `src/ClassicDesk/`：默认前端、独立主题、原创图标与宿主适配。
 - `tests/`：可移植隔离测试；不依赖开发者原本的组件目录。
-- `scripts/Test.ps1`：一键运行四组检查。
+- `scripts/Test.ps1`：一键运行基础检查；传入 `-ServiceBundle` 可追加离线服务包和模拟安装检查。
 - [THIRD_PARTY.md](THIRD_PARTY.md)：外部增强组件与公开分发边界。
 - [V2_ROADMAP.md](V2_ROADMAP.md)：下一版的小步目标与验收条件。
 

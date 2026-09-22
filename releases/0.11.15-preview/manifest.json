@@ -1,0 +1,18 @@
+{
+  "sourceCommit": "bdefb6dfdf2df8b4e7713476fccdfee0a6c187a0",
+  "version": "0.11.15-preview",
+  "packageKind": "settings-frontend-preview",
+  "includesEnhancementRuntime": false,
+  "packages": [
+    {
+      "file": "ClassicDesk-0.11.15-preview-windows-x64.zip",
+      "bytes": 7043562,
+      "sha256": "0cc03f1b6667400bc7e3b9082d267e4f199f0f7267e18cd33ed85241f5cbb65a"
+    },
+    {
+      "file": "ClassicDesk-0.11.15-preview-source-public.zip",
+      "bytes": 8197164,
+      "sha256": "650f5564d6736adf44e060a6ba24666d836b6030202556b6cd1f73794a937128"
+    }
+  ]
+}
