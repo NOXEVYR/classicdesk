@@ -75,7 +75,7 @@ public sealed record ShellPreviewOptions(
     bool ClassicContextMenu = true, bool Mica = true, int TaskbarButtonWidth = 44,
     int SmallIconSize = 16, int SmallTaskbarButtonWidth = 32, bool OtherSystemButtonsOnLeft = true,
     bool StartMenuOnLeft = true, bool SearchMenuOnLeft = false, bool ClassicMenuWithCtrl = true,
-    bool UseClassicNavigationBar = false);
+    bool UseClassicNavigationBar = false, bool LeftAlignedApps = false);
 
 /// <summary>Original vector proposal, never a live shell capture. No handles, OS reads or actions.
 /// Mica is retained only for API compatibility; no material-setting capability is implied.</summary>
@@ -190,13 +190,14 @@ public sealed class ShellPreview : FrameworkElement
         Rect(dc, 1, barY, w - 2, height, "#FFFFFF");
         Line(dc, 1, barY, w - 1, barY, "#E1E7F0"); Line(dc, 1, barY + height, w - 1, barY + height, "#E1E7F0");
         double middle = barY + height / 2.0;
-        bool left = o.StartOnLeft, otherLeft = left && o.OtherSystemButtonsOnLeft;
+        bool allLeft = o.LeftAlignedApps;
+        bool left = !allLeft && o.StartOnLeft, otherLeft = left && o.OtherSystemButtonsOnLeft;
         int centeredSystemButtons = (left ? 0 : 1) + (otherLeft ? 0 : 2);
         // Wide-button examples show fewer sample apps before touching the left controls or tray.
         double reservedEdge = otherLeft ? 218 : 143;
-        int appCount = Math.Clamp((int)Math.Floor((w - 2 * reservedEdge) / buttonWidth) - centeredSystemButtons, 1, 4);
+        int appCount = Math.Clamp((int)Math.Floor((w - (allLeft ? 171 : 2 * reservedEdge)) / buttonWidth) - centeredSystemButtons, 1, 4);
         int centeredCount = appCount + centeredSystemButtons;
-        double first = w / 2 - centeredCount * buttonWidth / 2.0;
+        double first = allLeft ? 18 : w / 2 - centeredCount * buttonWidth / 2.0;
         if (left) Icon(dc, "start", 29, middle - 11, 22);
         if (otherLeft)
         {
@@ -233,7 +234,7 @@ public sealed class ShellPreview : FrameworkElement
         {
             bool menuLeft = o.StartOnLeft && o.StartMenuOnLeft;
             string searchScope = !menuLeft ? "随系统" : o.SearchMenuOnLeft ? "所有入口" : "仅从开始";
-            string placement = $"菜单{(menuLeft ? "靠左" : "随系统")} · 搜索{searchScope}";
+            string placement = allLeft ? "全靠左 · 菜单与搜索原生定位" : $"菜单{(menuLeft ? "靠左" : "随系统")} · 搜索{searchScope}";
             Text(dc, placement, w - (w >= 720 ? 209 : 155), 87, w >= 720 ? 9.5 : 9, Muted, width: w >= 720 ? 195 : 142);
         }
     }
@@ -364,3 +365,4 @@ public sealed class ShellPreview : FrameworkElement
         else Text(dc, classic ? "Ctrl 临时切换已关闭" : "点击“显示更多选项”展开完整命令", infoX, 140, 10, "#8D9DB4", width: infoW);
     }
 }
+

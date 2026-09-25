@@ -59,6 +59,24 @@ File.WriteAllText(journalPath, "broken-json");
 bool rejected = false;
 try { await controller.ReviewAsync(new ShellProfile()); } catch (JsonException) { rejected = true; }
 allChecks.Add(new { name = "Damaged recovery record stays intact and blocks review", passed = rejected && File.ReadAllText(journalPath) == "broken-json" && forbidden.Calls == 0 });
+foreach (bool left in new[] { false, true })
+{
+    var p = new ShellProfile(LeftAlignedApps: left, CompactTray: true, TranslucentTaskbar: true);
+    int desired = left ? 0 : 1;
+    var env = new ShellBackendEnvironment(DateTime.UtcNow, "X64", 26200, 0, "test", [], [], [], [], "absent", [], desired);
+    var plan = ShellBackendPlanner.CreatePlan(p, env);
+    allChecks.Add(new { name = $"layout {left} selects positioning only for separated layout", passed = plan.Modules.Single(m => m.Id == "taskbar-start-button-position").Selected == !left });
+    allChecks.Add(new { name = $"layout {left} retains style and size modules", passed = plan.Modules.Where(m => m.Id is "taskbar-icon-size" or "windows-11-taskbar-styler" or "taskbar-background-helper").All(m => m.Selected) });
+    bool accepted = true;
+    try { ShellServiceLayout.ValidateTaskbarAlignment(p, desired); } catch { accepted = false; }
+    bool alignmentRejected = false;
+    try { ShellServiceLayout.ValidateTaskbarAlignment(p, 1 - desired); } catch (InvalidOperationException) { alignmentRejected = true; }
+    allChecks.Add(new { name = $"service layout {left} requires matching native alignment without writing", passed = accepted && alignmentRejected });
+}
+bool skipAlignmentAccepted = true;
+try { ShellServiceLayout.ValidateTaskbarAlignment(new ShellProfile(LeftAlignedApps: true, SkipTaskbarLayout: true), null); } catch { skipAlignmentAccepted = false; }
+allChecks.Add(new { name = "service skipped layout does not require native alignment", passed = skipAlignmentAccepted });
+
 var report = new { passed = allChecks.Count(c => c.passed), failed = allChecks.Count(c => !c.passed), realHostCalls = forbidden.Calls, windowsShown = 0, checks = allChecks };
 var text = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
 if (args.Length == 1) { var path = Path.GetFullPath(args[0]); Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, text); }

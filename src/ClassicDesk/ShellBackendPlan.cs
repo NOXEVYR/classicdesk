@@ -100,7 +100,7 @@ public static class ShellBackendPlanner
                 version.Contains("classicdesk") ? "" : $"https://mods.windhawk.net/mods/{id}/{version}_64.dll");
         var modules = new[]
         {
-            Mod("taskbar-start-button-position", "1.3.2", "GPL-3.0", !profile.SkipTaskbarLayout && profile.StartOnLeft,
+            Mod("taskbar-start-button-position", "1.3.2", "GPL-3.0", !profile.SkipTaskbarLayout && profile.StartOnLeft && !profile.LeftAlignedApps,
                 ["explorer.exe", "StartMenuExperienceHost.exe"], Settings(("otherSystemButtonsOnTheLeft", profile.OtherSystemButtonsOnLeft ? "1" : "0"),
                     ("startMenuOnTheLeft", profile.StartMenuOnLeft ? "1" : "0"), ("searchMenuPositionInAllCases", profile.SearchMenuOnLeft ? "1" : "0"))),
             Mod("taskbar-icon-size", "1.3.10", "GPL-3.0", !profile.SkipTaskbarSizing, ["explorer.exe"],
@@ -118,8 +118,9 @@ public static class ShellBackendPlanner
         if (environment.Build is null) blockers.Add("Windows 构建号未能读取，不能推断兼容性。");
         else if (environment.Build < 22000) blockers.Add("所选模块面向 Windows 11，当前 Windows 构建不满足前提。");
         if (environment.Architecture != "X64") blockers.Add("本方案只核对了 x86-64 源码，当前架构尚未支持。");
-        if (!profile.SkipTaskbarLayout && environment.NativeTaskbarAlignment != 1)
-            blockers.Add("本方案的应用居中布局要求原生 TaskbarAl=1；当前未确认满足，需要独立、有归属且可恢复的 Windows 对齐事务，当前不执行。");
+        int requiredAlignment = profile.LeftAlignedApps ? 0 : 1;
+        if (!profile.SkipTaskbarLayout && environment.NativeTaskbarAlignment != requiredAlignment)
+            blockers.Add($"本方案要求原生 TaskbarAl={requiredAlignment}（{(requiredAlignment == 0 ? "全靠左" : "应用居中")}）；当前未确认满足，需要独立、有归属且可恢复的 Windows 对齐事务，此只读检查不执行。");
         if (environment.StartAllBackEvidence.Count > 0 || environment.StartAllBackLoaded == "detected")
             blockers.Add("检测到 StartAllBack：必须先审查退出/停用及恢复方案，再经明确同意切换；可能需要注销或重启 Explorer，不在此检查中执行。");
         if (environment.StartAllBackLoaded == "unknown") blockers.Add("未能完整读取 Explorer 模块，StartAllBack 是否在运行未知。");
@@ -142,7 +143,7 @@ public static class ShellBackendPlanner
             "核对可携带最小运行文件、GPL/MIT 与第三方许可；预编译 DLL 必须与目标架构、Windhawk API 和运行库匹配。",
             "仅在审查通过后设计备份事务：保存原文件字节/修订，写入独立便携目录中的 Disabled=1 配置，再逐模块加载并回读。",
             "先验证开始按钮位置、图标尺寸和经典 Ribbon，再单独验证右键菜单；Taskbar Styler 仅在勾选半透明或紧凑托盘时启用内置样式。",
-            "左侧系统按钮/中间应用要求原生 TaskbarAl=1；将来对齐修改必须单独备份、记录归属并可恢复。禁用模块不能视作开始和应用自动居中的恢复。",
+            "全靠左布局使用 TaskbarAl=0 并停用开始定位模块；两种应用居中布局使用 TaskbarAl=1。对齐事务单独备份并记录归属；禁用模块不等于恢复原对齐。",
             "通过后由本 WPF 前端控制配置；使用 -tray-only 运行引擎而不打开 Windhawk 设置 UI，关闭 WPF 后验收效果与资源占用。"
         };
         var paths = new List<string> { Path.Combine(root, "windhawk.exe"), Path.Combine(root, "windhawk.ini"),

@@ -7,6 +7,21 @@ public static class ShellProgram
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--inspect-taskbar-auto-hide")
+        {
+            try
+            {
+                var controller = new TaskbarAutoHideController(new WindowsTaskbarAutoHideHost(), TaskbarAutoHideController.DefaultDirectory);
+                var review = controller.Review();
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Available = true, Enabled = review.Current.Enabled, review.CanApply, review.CanRestore, review.Title, HostSettingsChanged = false }));
+                return 0;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Available = false, Reason = e.Message, HostSettingsChanged = false }));
+                return 1;
+            }
+        }
         if (args.Length == 1 && args[0] == "--disable-shell-service")
         {
             try
@@ -121,6 +136,13 @@ public static class ShellProgram
         {
             if (ShellServiceStatus.Read().Registered) new ShellServicePanel(profile) { Owner = owner }.ShowDialog();
             else ShellNativeController.Open(owner, profile);
+        }, manageAutoHide: owner =>
+        {
+            var controller = new TaskbarAutoHideController(new WindowsTaskbarAutoHideHost(), TaskbarAutoHideController.DefaultDirectory);
+            new TaskbarAutoHidePanel(controller) { Owner = owner }.ShowDialog();
+        }, openTaskbarSettings: () =>
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:taskbar") { UseShellExecute = true });
         });
         app.MainWindow = window;
         app.DispatcherUnhandledException += (_, e) => { MessageBox.Show(window, e.Exception.Message, "ClassicDesk · 操作未完成"); e.Handled = true; };

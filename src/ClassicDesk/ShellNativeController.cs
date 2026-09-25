@@ -134,7 +134,7 @@ public sealed partial class ShellNativeController : IShellNativeController
             try { coordinator.VerifyAppliedConfiguration(journal.Id); }
             catch (Exception e) { return new("引擎正在运行，规则需要核对", e.Message, CanRestore: true, RestoreTicket: ticket); }
             var applied = journal.Profile;
-            var summary = (applied.SkipTaskbarLayout ? "保留任务栏位置" : applied.StartOnLeft ? "开始靠左、应用居中" : "开始与应用居中") +
+            var summary = (applied.SkipTaskbarLayout ? "保留任务栏位置" : ShellPresets.TaskbarLayoutName(applied)) +
                 (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
                 (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
                 (applied.TranslucentTaskbar ? "；透明任务栏" : "") +
@@ -149,7 +149,7 @@ public sealed partial class ShellNativeController : IShellNativeController
             return new("窗口明暗跟随需要新版组件", "使用包含 ClassicDesk 窗口明暗跟随组件的运行包后才能应用；现有静态透明方案仍可恢复。");
         var modules = ShellBackendPlanner.CreatePlan(profile, new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", [])).Modules.Where(m => m.Selected).ToArray();
         if (modules.Length == 0)
-            return new("未选择增强功能", "请勾选需要的增强。仅选择原生居中布局或 Windows 11 原生样式时，不启动后台引擎；可在 Windows 设置中调整原生对齐。");
+            return new("未选择增强功能", "请勾选需要的增强。仅选择原生对齐布局或 Windows 11 原生样式时，不启动后台引擎；可在 Windows 设置中调整原生对齐。");
         var preparation = host.Inspect(check.Package, profile);
         if (preparation.Guards.StartAllBack != ActivationPresence.Absent)
             return new("现有桌面组件尚未退出", "检测到 StartAllBack 仍被 Explorer 加载，或无法完整核对其运行状态。停用勾选不等于组件已经卸载；即使已重启，也需要以重新检查结果为准。当前保留原桌面，不并行启用增强，也不会自动注销或重启系统。");
@@ -157,7 +157,7 @@ public sealed partial class ShellNativeController : IShellNativeController
             return new("已有增强引擎正在运行", "检测到另一个 Windhawk 实例，当前不能并行启动。请先处理已有实例，再检查此方案。");
         var confirmation = coordinator.CaptureConfirmation(check.Package, profile);
         return new("所选功能可以试用", $"本次按勾选启用 {modules.Length} 个增强模块，其余模块保持停用。" +
-            (profile.SkipTaskbarLayout ? "保留当前任务栏对齐。" : "任务栏对齐将设为应用居中，并保存原值。") +
+            (profile.SkipTaskbarLayout ? "保留当前任务栏对齐。" : "任务栏对齐将设为" + (profile.LeftAlignedApps ? "全靠左" : "应用居中") + "，并保存原值。") +
             "\n启用前备份本包设置；恢复会撤销本次组合。不会重启资源管理器。实际效果及整体占用尚未实机验收。", CanEnable: true, EnableTicket: confirmation);
     }
     ActivationJournal[] PendingRecords()

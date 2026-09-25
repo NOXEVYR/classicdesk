@@ -63,7 +63,7 @@ public sealed class ShellNativePanel : Window
         var intro = Text("按需选择本次功能，参数沿用当前方案。", 11); intro.Foreground = Color("#7F8997"); intro.Margin = new Thickness(0, 5, 0, 15); title.Children.Add(intro); Grid.SetRow(title, 1); root.Children.Add(title);
         var body = new StackPanel { Margin = new Thickness(24, 0, 24, 12) }; var scroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; Grid.SetRow(scroll, 2); root.Children.Add(scroll);
         var summary = new StackPanel { Margin = new Thickness(14, 8, 14, 8) };
-        FeatureRow(summary, "任务栏布局", profile.StartOnLeft ? "开始靠左，应用居中" : "开始与应用居中", "layout", Selection.Layout, value => Selection with { Layout = value });
+        FeatureRow(summary, "任务栏布局", ShellPresets.TaskbarLayoutName(profile) + "；同时控制紧凑托盘与透明策略（动态背景仅主屏）。", "layout", Selection.Layout, value => Selection with { Layout = value });
         FeatureRow(summary, "图标与尺寸", $"图标 {profile.IconSize} · 栏高 {profile.TaskbarHeight} · 按钮宽 {profile.TaskbarButtonWidth} px", "sizing", Selection.Sizing, value => Selection with { Sizing = value });
         FeatureRow(summary, "资源管理器", profile.ClassicRibbon ? "Windows 10 功能区 · 不保留标签页" : profile.UseClassicNavigationBar ? "经典导航栏 · 保留标签页" : "Windows 11 原生样式 · 无需增强", "explorer", false, value => Selection with { Explorer = value }, profile.ClassicRibbon || profile.UseClassicNavigationBar);
         FeatureRow(summary, "右键菜单", profile.ClassicContextMenu ? "完整菜单" + (profile.ClassicMenuWithCtrl ? " · 按 Ctrl 临时使用新版" : "") : "Windows 11 原生菜单 · 无需增强", "menu", false, value => Selection with { ContextMenu = value }, profile.ClassicContextMenu);
@@ -140,7 +140,7 @@ public sealed class ShellNativePanel : Window
             review = null;
             state.Text = result.Error is not null ? "操作未完成，请重新检查" : result.State switch { ShellActivationState.Active => "增强引擎已启动", ShellActivationState.Restored => "原设置已恢复", ShellActivationState.RolledBack => "切换未完成，已回退", _ => "需要检查恢复记录" };
             detail.Text = result.State switch {
-                ShellActivationState.Active => result.Error ?? "所选功能的配置与进程已回读。资源管理器样式请在新开的窗口中检查，旧窗口不会立即切换。切换其他组合前，请先恢复本次设置。",
+                ShellActivationState.Active => result.Error ?? "所选功能的配置与进程已回读，实际效果仍需确认。资源管理器样式请在新开的窗口中检查。需要恢复或切换组合时，请先点击“重新检查”，再按新的检查结果恢复本次设置。",
                 ShellActivationState.Restored => "已恢复本次事务拥有的原始设置，并确认自己的引擎退出。请检查实际桌面。",
                 _ => result.Error ?? "已保留记录，未把不确定状态当作成功。" };
             detail.Text += "\n记录：" + result.JournalId.ToString("N");
@@ -189,9 +189,9 @@ public sealed class ShellNativePanel : Window
     void UpdateSelectionSummary()
     {
         var effective = Selection.Apply(profile);
-        var modules = (Selection.Layout && profile.StartOnLeft ? 1 : 0) + (Selection.Sizing ? 1 : 0) +
+        var modules = (Selection.Layout && profile.StartOnLeft && !profile.LeftAlignedApps ? 1 : 0) + (Selection.Sizing ? 1 : 0) +
             (effective.ClassicRibbon || effective.UseClassicNavigationBar ? 1 : 0) + (effective.ClassicContextMenu ? 1 : 0) + (effective.CompactTray || effective.TranslucentTaskbar ? 1 : 0) + (effective.TranslucentTaskbar ? 1 : 0);
-        selectionSummary.Text = $"本次需要 {modules} 个增强模块 · " + (Selection.Layout ? "调整任务栏对齐" : "保留任务栏对齐") + "\n未勾选的模块保持停用；所有组合共用一个引擎。";
+        selectionSummary.Text = $"本次需要 {modules} 个增强模块 · " + (Selection.Layout ? "使用方案中的对齐、托盘与背景设置" : "不启用对齐、紧凑托盘与透明增强") + "\n未勾选的模块保持停用；所有组合共用一个引擎。";
     }
     static SolidColorBrush Color(string hex) => new((Color)ColorConverter.ConvertFromString(hex));
     static TextBlock Text(string value, double size, bool bold = false) => new() { Text = value, FontSize = size, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, TextWrapping = TextWrapping.Wrap };

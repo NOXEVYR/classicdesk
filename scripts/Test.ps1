@@ -14,6 +14,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Frontend checks failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Release boundary checks failed.' }
 & dotnet run --project (Join-Path $repo 'tests/ServiceUI/ServiceUI.csproj') -c Release -- (Join-Path $OutputDirectory 'service-ui')
 if ($LASTEXITCODE -ne 0) { throw 'Service UI checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/AutoHide/AutoHide.csproj') -c Release -- (Join-Path $OutputDirectory 'auto-hide')
+if ($LASTEXITCODE -ne 0) { throw 'Auto-hide isolated checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/ColdUpgrade/ColdUpgrade.csproj') -c Release -- (Join-Path $OutputDirectory 'cold-upgrade.json')
+if ($LASTEXITCODE -ne 0) { throw 'Cold upgrade checks failed.' }
 if ($ServiceBundle) {
     & dotnet run --project (Join-Path $repo 'tests/ShellService/ShellService.csproj') -c Release -- ([IO.Path]::GetFullPath($ServiceBundle)) (Join-Path $OutputDirectory 'service')
     if ($LASTEXITCODE -ne 0) { throw 'Service package checks failed.' }

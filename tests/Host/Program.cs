@@ -121,6 +121,44 @@ Test("menu-only final alignment drift still blocks launch", f => {
     f.Process.BeforeStart = () => f.Registry.State = f.Registry.State with { Revision = "external-alignment" };
     var r = f.Activate(); Assert(r.State == ShellActivationState.ManualReview && f.Process.Starts == 0 && f.Registry.Writes == 0);
 });
+foreach (var original in new[] { "0", "1", "" })
+    Test("all-left real files restore exact alignment and bytes " + original, f => {
+        f.Profile = new(LeftAlignedApps: true); f.Registry.State = new(original != "", original, "original-all-left");
+        var originals = f.Originals(); var capture = f.Capture();
+        var alignment = capture.Preparation.Changes.Single(c => c.Target == ActivationTarget.TaskbarAlignment);
+        Assert(alignment.DesiredExists && alignment.DesiredData == "0" && f.Registry.Writes == 0);
+        var start = capture.Preparation.Changes.Single(c => c.Target == ActivationTarget.StartButtonMod);
+        Assert(Encoding.Unicode.GetString(Convert.FromBase64String(start.DesiredData)).Contains("Disabled=1\r\n"));
+        var result = f.Core.Activate(capture);
+        Assert(result.State == ShellActivationState.Active && f.Registry.State.Exists && f.Registry.State.Data == "0");
+        Assert(File.ReadAllText(Path.Combine(f.PackageRoot, "AppData/Engine/Mods/taskbar-start-button-position.ini")).Contains("Disabled=1\r\n"));
+        var core = new ShellActivationCoordinator(new WindowsShellActivationHost(f.Registry, f.Environment, f.Process), new FileActivationJournalStore(f.Logs));
+        Assert(core.Restore(core.CaptureRestoreConfirmation(result.JournalId)).State == ShellActivationState.Restored);
+        Assert(f.Registry.State.Exists == (original != "") && f.Registry.State.Data == original);
+        Assert(f.Registry.Writes == (original == "0" ? 0 : 2) && originals.All(p => File.ReadAllBytes(p.Key).SequenceEqual(p.Value)));
+    });
+foreach (var original in new[] { "0", "1", "" })
+    Test("skipped all-left leaves alignment and revision untouched " + original, f => {
+        f.Profile = new(LeftAlignedApps: true, SkipTaskbarLayout: true);
+        f.Registry.State = new(original != "", original, "untouched-skip"); var registry = f.Registry.State; var originals = f.Originals();
+        var result = f.Activate(); Assert(result.State == ShellActivationState.Active && f.Registry.State == registry && f.Registry.Writes == 0);
+        Assert(f.Core.Restore(f.Core.CaptureRestoreConfirmation(result.JournalId)).State == ShellActivationState.Restored);
+        Assert(f.Registry.State == registry && f.Registry.Writes == 0 && originals.All(p => File.ReadAllBytes(p.Key).SequenceEqual(p.Value)));
+    });
+Test("all-left refuses external alignment drift before resume", f => {
+    f.Profile = new(LeftAlignedApps: true); var active = f.Activate(); f.Process.Running = false;
+    f.Registry.State = new(true, "1", "external-change"); var writes = f.Registry.Writes;
+    Reject(() => f.Core.CaptureResumeConfirmation(active.JournalId));
+    Assert(f.Registry.State.Data == "1" && f.Registry.Writes == writes && f.Process.Starts == 1);
+});
+Test("all-left field is backward compatible and round trips through profile files", f => {
+    var legacy = JsonSerializer.Serialize(new ShellProfile()); Assert(!legacy.Contains("LeftAlignedApps", StringComparison.Ordinal));
+    var old = JsonSerializer.Deserialize<ShellProfile>(legacy)!; Assert(!old.LeftAlignedApps);
+    var profile = old with { LeftAlignedApps = true }; var file = Path.Combine(Path.GetDirectoryName(f.Logs)!, "all-left-profile.json");
+    ShellProfileFile.Save(file, profile, "missing");
+    Assert(ShellProfileFile.Read(file) == profile && File.ReadAllText(file).Contains("LeftAlignedApps", StringComparison.Ordinal));
+    Assert(JsonSerializer.Serialize(JsonSerializer.Deserialize<ShellProfile>(legacy)) == legacy);
+});
 Test("legacy profiles omit default scope fields to retain journal fingerprints", f => {
     var text = JsonSerializer.Serialize(new ShellProfile()); Assert(!text.Contains("SkipTaskbar"));
     var old = JsonSerializer.Deserialize<ShellProfile>(text)!; Assert(!old.SkipTaskbarLayout && !old.SkipTaskbarSizing);
@@ -219,4 +257,4 @@ sealed class Fixture {
 sealed class FakeAlignment:IActivationAlignment { public ActivationItemState State=new(true,"0","original"); public int Reads,Writes; public bool ThrowAfterWrite; public ActivationItemState Read(){Reads++;return State;} public ActivationItemState CompareExchange(ActivationItemState expected,bool exists,string data){if(State!=expected)throw new IOException("fake CAS");Writes++;State=new(exists,data,"fake-"+Writes);if(ThrowAfterWrite)throw new IOException("unknown fake write");return State;} }
 sealed class FakeEnvironment(FakeProcesses process):IActivationEnvironment { public string Revision="fake-windows11-explorer-session"; public ActivationPresence Sab,Other; public bool RequireStoppedIdentity; public ActivationEnvironmentObservation Inspect(ActivationDaemonIdentity? allowedDaemon)=>new(Revision,Sab,Other!=ActivationPresence.Absent?Other:(process.Running || RequireStoppedIdentity && process.Identity is not null)&&allowedDaemon!=process.Identity?ActivationPresence.Present:ActivationPresence.Absent); }
 sealed class FakeProcesses:IActivationProcesses { public int Starts,Stops; public Action? BeforeStart; public bool Running,Foreign,StopUnknown; public string Behavior="normal"; public ActivationDaemonIdentity? Identity; public ActivationStartResult Start(VerifiedActivationPackage p,string token,Action verifyBeforeStart){BeforeStart?.Invoke();try{verifyBeforeStart();}catch(Exception e){return new(ActivationOutcome.RejectedWithoutChange,null,e.Message);}Starts++;if(Behavior=="reject")return new(ActivationOutcome.RejectedWithoutChange,null);Running=true;Identity=new(7000+Starts,DateTime.UtcNow.Ticks,p.ExecutablePath,p.ExecutableSha256,token);return Behavior=="unknown"?new(ActivationOutcome.Unknown,null):new(ActivationOutcome.Confirmed,Identity);} public ActivationDaemonHealth Inspect(ActivationDaemonIdentity i)=>Foreign?ActivationDaemonHealth.DifferentProcess:i==Identity?(Running?ActivationDaemonHealth.SameProcessRunning:ActivationDaemonHealth.OwnedProcessExited):ActivationDaemonHealth.OwnedProcessExited; public ActivationStopResult Stop(ActivationDaemonIdentity i){if(i!=Identity||Foreign)throw new Exception("never stop foreign");Stops++;if(StopUnknown)return new(ActivationOutcome.Unknown);Running=false;return new(ActivationOutcome.Confirmed);} }
-namespace ClassicDesk { public sealed record ShellPreviewOptions(bool ClassicRibbon,bool StartOnLeft,int IconSize,int TaskbarHeight,bool ClassicContextMenu,bool Mica=true,int TaskbarButtonWidth=44,int SmallIconSize=16,int SmallTaskbarButtonWidth=32,bool OtherSystemButtonsOnLeft=true,bool StartMenuOnLeft=true,bool SearchMenuOnLeft=false,bool ClassicMenuWithCtrl=true,bool UseClassicNavigationBar=false); }
+namespace ClassicDesk { public sealed record ShellPreviewOptions(bool ClassicRibbon,bool StartOnLeft,int IconSize,int TaskbarHeight,bool ClassicContextMenu,bool Mica=true,int TaskbarButtonWidth=44,int SmallIconSize=16,int SmallTaskbarButtonWidth=32,bool OtherSystemButtonsOnLeft=true,bool StartMenuOnLeft=true,bool SearchMenuOnLeft=false,bool ClassicMenuWithCtrl=true,bool UseClassicNavigationBar=false,bool LeftAlignedApps=false); }

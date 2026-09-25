@@ -331,6 +331,71 @@ internal static class FrontendChecks
             Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-reset-page"));
             Require(!window.Draft.SkipTaskbarLayout && !window.Draft.SkipTaskbarSizing, "重置本页没有恢复开关。");
         });
+        Check("草稿状态计数随编辑保存撤销更新，查看更改不触发系统检查", () =>
+        {
+            var file = Path.Combine(run, "draft-summary.json"); int calls = InspectCalls; var window = New(file);
+            TextBlock Summary() => Logical<TextBlock>(window).Single(t => AutomationProperties.GetAutomationId(t) == "shell-draft-summary");
+            Require(Summary().Text == "默认方案 · 尚未保存", "缺失方案没有明确标为未保存默认值。");
+            Choice(window, "图标大小").SelectedItem = "32 px";
+            Require(Summary().Text == "待保存 · 1 项更改" && !File.Exists(file), "首次编辑计数错误或提前保存。");
+            window.SelectPage(2); Toggle(window, "完整右键菜单").IsChecked = false;
+            Require(Summary().Text == "待保存 · 2 项更改", "跨页更改没有计入摘要。");
+            var edited = window.Draft;
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-review-changes"));
+            Require(window.ActivePage == 4 && window.Draft == edited && InspectCalls == calls && !File.Exists(file), "查看更改触发了检查、保存或改变草稿。");
+            Layout(window, 740, 550); Bounds(window, 740, 550); Capture(window, 740, 550, "草稿摘要-跨页更改-740x550.png");
+            var changes = Logical<TextBlock>(window).Single(t => AutomationProperties.GetAutomationId(t) == "shell-change-summary");
+            var scroll = Field<ScrollViewer>(window, "scroll");
+            var changeBounds = changes.TransformToAncestor(scroll).TransformBounds(new Rect(changes.RenderSize));
+            Require(scroll.VerticalOffset == 0 && changeBounds.Width > 0 && changeBounds.Height > 0 && changeBounds.Top >= 0 && changeBounds.Bottom <= scroll.ViewportHeight + 1, "查看更改后摘要未在最小窗口首屏完整可见。");
+            Require(changes.Text.Contains("图标大小", StringComparison.Ordinal) && changes.Text.Contains("完整右键菜单", StringComparison.Ordinal), "更改摘要遗漏跨页修改内容。");
+            window.SaveDraft(); Require(Summary().Text == "本地方案已保存" && ShellProfileFile.Read(file) == edited, "保存后摘要仍声称有未保存更改。");
+            window.SelectPage(0); Choice(window, "图标大小").SelectedItem = "20 px";
+            Require(Summary().Text == "待保存 · 1 项更改", "保存后新编辑没有重新计数。");
+            Click(Field<Button>(window, "undo"));
+            Require(Summary().Text == "本地方案已保存" && window.Draft == edited && InspectCalls == calls, "撤销未恢复摘要/草稿，或状态更新触发系统检查。");
+        });
+        Check("最小窗口长反馈与撤销保存检查互不遮挡", () =>
+        {
+            var window = New(Path.Combine(run, "footer-overlap.json"));
+            Choice(window, "图标大小").SelectedItem = "32 px"; window.SaveToLibrary("隔离布局验收");
+            Layout(window, 740, 550); Bounds(window, 740, 550);
+            var root = (FrameworkElement)window.Content; var feedback = Field<TextBlock>(window, "feedback");
+            var feedbackBounds = feedback.TransformToAncestor(root).TransformBounds(new Rect(feedback.RenderSize));
+            Require(feedbackBounds.Width > 0 && feedbackBounds.Top >= 0 && feedbackBounds.Bottom <= 550, "反馈被裁切或没有可见区域。");
+            foreach (var button in new[] { Field<Button>(window, "undo"), Field<Button>(window, "save"), Field<Button>(window, "inspectButton") })
+            {
+                var buttonBounds = button.TransformToAncestor(root).TransformBounds(new Rect(button.RenderSize));
+                Require(!feedbackBounds.IntersectsWith(buttonBounds), "较长反馈与底部动作按钮重叠。");
+            }
+            Capture(window, 740, 550, "底部反馈-长文本-740x550.png");
+        });
+        Check("任务栏本页重置覆盖透明与托盘，保留其他页和皮肤且可撤销", () =>
+        {
+            var file = Path.Combine(run, "reset-taskbar-appearance.json"); var window = New(file);
+            Toggle(window, "最大化或全屏时不透明").IsChecked = true;
+            Toggle(window, "紧凑系统托盘").IsChecked = true;
+            window.ApplySkin(2); window.SelectPage(1); Choice(window, "工具区样式").SelectedIndex = 2;
+            window.SelectPage(2); Toggle(window, "完整右键菜单").IsChecked = false;
+            window.SaveDraft(); var saved = window.Draft; var diskHash = Hash(file);
+            window.SelectPage(0);
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-reset-page"));
+            Require(window.Draft == (saved with { CompactTray = false, TranslucentTaskbar = false, FollowMaximizedTheme = false }), "重置遗漏外观开关，或修改了其他页/皮肤。");
+            Require(Hash(file) == diskHash && Field<Button>(window, "save").IsEnabled, "本页重置提前写盘或没有形成草稿。");
+            Require(!Toggle(window, "透明任务栏").IsChecked.GetValueOrDefault() && !Toggle(window, "最大化或全屏时不透明").IsChecked.GetValueOrDefault() && !Toggle(window, "紧凑系统托盘").IsChecked.GetValueOrDefault(), "重置后控件仍显示旧开关值。");
+            Click(Field<Button>(window, "undo"));
+            Require(window.Draft == saved && Hash(file) == diskHash && !Field<Button>(window, "save").IsEnabled, "撤销未完整恢复保存方案，或意外改写磁盘。");
+        });
+        Check("透明与最大化开关即时双向同步，控件与草稿一致且无外部操作", () =>
+        {
+            var file = Path.Combine(run, "adaptive-controls-sync.json"); int calls = InspectCalls; var window = New(file);
+            var transparent = Toggle(window, "透明任务栏"); var opaque = Toggle(window, "最大化或全屏时不透明");
+            opaque.IsChecked = true;
+            Require(window.Draft.TranslucentTaskbar && window.Draft.FollowMaximizedTheme && transparent.IsChecked == true && opaque.IsChecked == true, "启用最大化不透明后透明控件与草稿未同步。");
+            transparent.IsChecked = false;
+            Require(!window.Draft.TranslucentTaskbar && !window.Draft.FollowMaximizedTheme && transparent.IsChecked == false && opaque.IsChecked == false, "关闭透明后最大化控件与草稿未同步。");
+            Require(!File.Exists(file) && InspectCalls == calls, "联动开关提前保存或触发系统检查。");
+        });
         Check("明暗跟随联动透明开关并保存导入", () =>
         {
             var file=Path.Combine(run,"adaptive-theme.json");var window=New(file);
@@ -349,6 +414,77 @@ internal static class FrontendChecks
             Require(!window.Draft.StartOnLeft && Choice(window,"开始按钮位置").SelectedIndex==1,"布局卡没有更新草稿和下拉项。");
             Choice(window,"开始按钮位置").SelectedIndex=0;
             Require(Logical<Button>(window).Single(b=>AutomationProperties.GetAutomationId(b)=="shell-layout-0").Tag?.ToString()=="selected","下拉项没有更新布局卡选中态。");
+        });
+        Check("系统行为入口未注入时禁用且不改草稿", () =>
+        {
+            var window = New(Path.Combine(run, "native-entry-disabled.json")); var draft = window.Draft;
+            foreach (var id in new[] { "shell-auto-hide", "shell-windows-taskbar" })
+                Require(!Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == id).IsEnabled, "隔离入口未禁用：" + id);
+            Require(window.Draft == draft, "入口构造改变了草稿。");
+        });
+        Check("系统行为入口仅显式点击调用且保存不应用系统参数", () =>
+        {
+            int autoHideCalls = 0, settingsCalls = 0; Window? receivedOwner = null;
+            var file = Path.Combine(run, "native-entry-boundary.json");
+            var window = new ShellSettingsWindow(path: file, manageAutoHide: owner => { autoHideCalls++; receivedOwner = owner; }, openTaskbarSettings: () => settingsCalls++); Windows.Add(window);
+            Require(autoHideCalls == 0 && settingsCalls == 0, "构造时调用系统入口。");
+            window.SelectPage(1); window.SelectPage(0); Choice(window, "开始按钮位置").SelectedIndex = 2; window.ApplySkin(3); window.SaveDraft();
+            Require(autoHideCalls == 0 && settingsCalls == 0, "切页、编辑、皮肤切换或保存调用系统入口。");
+            var draft = window.Draft; var disk = Hash(file);
+            var autoHide = Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-auto-hide");
+            var settings = Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-windows-taskbar");
+            Require(autoHide.IsEnabled && settings.IsEnabled, "已注入入口仍被禁用。");
+            Click(autoHide); Require(autoHideCalls == 1 && settingsCalls == 0 && ReferenceEquals(receivedOwner, window), "自动隐藏入口调用次数、窗口所有者或边界错误。");
+            Click(settings); Require(autoHideCalls == 1 && settingsCalls == 1, "系统设置入口未独立调用一次。");
+            Require(window.Draft == draft && Hash(file) == disk, "打开系统入口改变草稿或方案文件。");
+            Require(AutomationProperties.GetHelpText(settings).Contains("不接管这些值", StringComparison.Ordinal), "合并按钮入口误称已接管系统值。");
+        });
+        Check("系统行为入口异常反馈可见且保护草稿和保存文件", () =>
+        {
+            int autoHideCalls = 0, settingsCalls = 0;
+            var file = Path.Combine(run, "native-entry-errors.json");
+            var window = new ShellSettingsWindow(path: file,
+                manageAutoHide: _ => { autoHideCalls++; throw new IOException("模拟自动隐藏打开失败"); },
+                openTaskbarSettings: () => { settingsCalls++; throw new IOException("模拟系统设置打开失败"); }); Windows.Add(window);
+            Choice(window, "开始按钮位置").SelectedIndex = 2; window.SaveDraft(); var disk = Hash(file);
+            Choice(window, "图标大小").SelectedItem = "20 px"; var pending = window.Draft;
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-auto-hide"));
+            Require(Field<TextBlock>(window, "feedback").Text.Contains("模拟自动隐藏打开失败", StringComparison.Ordinal), "自动隐藏错误未显示。");
+            Require(window.Draft == pending && Hash(file) == disk, "自动隐藏错误丢失草稿或改写文件。");
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-windows-taskbar"));
+            Require(Field<TextBlock>(window, "feedback").Text.Contains("模拟系统设置打开失败", StringComparison.Ordinal), "系统设置错误未显示。");
+            Require(autoHideCalls == 1 && settingsCalls == 1 && window.Draft == pending && Hash(file) == disk && Field<Button>(window, "save").IsEnabled, "系统入口错误改变调用次数、草稿、文件或待保存状态。");
+        });
+        Check("全靠左三档切换、预览、跨页与原生对比不写系统", () =>
+        {
+            var file = Path.Combine(run, "all-left-layout.json"); var window = New(file); int calls = InspectCalls;
+            Layout(window, 1080, 820); var preview = Field<ShellPreview>(window, "preview"); var split = ImageHash(preview);
+            window.SetComparison(true); Layout(window, 1080, 820); var native = ImageHash(preview); window.SetComparison(false);
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-layout-2"));
+            Layout(window, 1080, 820);
+            Require(window.Draft is { StartOnLeft: true, LeftAlignedApps: true } && Choice(window, "开始按钮位置").SelectedIndex == 2, "全靠左卡片与草稿/下拉不同步。");
+            Require(preview.Options.LeftAlignedApps && ImageHash(preview) != split, "全靠左没有改变应用图标预览。");
+            foreach (var name in new[] { "其他系统按钮靠左", "开始菜单靠左展开", "所有入口的搜索都靠左" }) Require(!Toggle(window, name).IsEnabled, "全靠左错误开放增强定位：" + name);
+            window.SetComparison(true); Layout(window, 1080, 820); Require(ImageHash(preview) == native, "全靠左污染原生参考预览。"); window.SetComparison(false);
+            window.SelectPage(1); window.SelectPage(0); Require(Choice(window, "开始按钮位置").SelectedIndex == 2, "全靠左跨页丢失。");
+            Layout(window, 740, 550); Bounds(window, 740, 550); Capture(window, 740, 550, "任务栏-全靠左-740x550.png");
+            Layout(window, 1080, 820); Capture(window, 1080, 820, "任务栏-全靠左-1080x820.png");
+            Choice(window, "开始按钮位置").SelectedIndex = 1; Require(!window.Draft.StartOnLeft && !window.Draft.LeftAlignedApps, "居中没有清除全靠左。");
+            Choice(window, "开始按钮位置").SelectedIndex = 2; Choice(window, "开始按钮位置").SelectedIndex = 0;
+            Require(window.Draft.StartOnLeft && !window.Draft.LeftAlignedApps && Toggle(window, "其他系统按钮靠左").IsEnabled, "分开布局没有恢复增强定位。");
+            Require(!File.Exists(file) && InspectCalls == calls, "布局编辑提前写盘或调用系统检查。");
+        });
+        Check("全靠左导入导出与本页重置保留皮肤并可撤销", () =>
+        {
+            var file = Path.Combine(run, "all-left-roundtrip.json"); var export = Path.Combine(run, "all-left-export.json"); var window = New(file); int calls = InspectCalls;
+            Choice(window, "开始按钮位置").SelectedIndex = 2; window.ApplySkin(3); window.ExportDraft(export, "missing");
+            var expected = window.Draft; window.ApplyPreset(1); window.ImportDraft(export);
+            Require(window.Draft == expected && window.Draft.LeftAlignedApps && !File.Exists(file), "导入导出丢失全靠左或提前保存。");
+            window.SaveDraft(); Require(ShellProfileFile.Read(file) == expected, "保存丢失全靠左。"); var disk = Hash(file);
+            Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-reset-page"));
+            Require(!window.Draft.LeftAlignedApps && window.Draft.StartOnLeft && window.Draft.Skin == expected.Skin, "重置没有恢复默认布局或改变皮肤。");
+            Require(Hash(file) == disk && InspectCalls == calls, "重置提前写盘或调用系统检查。");
+            Click(Field<Button>(window, "undo")); Require(window.Draft == expected && Hash(file) == disk, "撤销没有恢复全靠左保存方案。");
         });
         Check("预设实际改变草稿，跨页保留且不提前写盘", () =>
         {
@@ -473,7 +609,7 @@ internal static class FrontendChecks
             Click(Field<Button>(desk, "save")); var snapshot = ShellProfileFile.Load(path);
             Require(snapshot.Profile == desk.Draft && snapshot.Revision == Hash(path), "保存内容或修订错误。");
             Require(Field<string?>(desk, "sourceRevision") == snapshot.Revision && !Field<Button>(desk, "save").IsEnabled, "保存后基线未更新。");
-            Require(Field<TextBlock>(desk, "feedback").Text.Contains("Windows 尚未修改", StringComparison.Ordinal), "保存反馈伪装为系统应用。");
+            Require(Field<TextBlock>(desk, "feedback").Text.Contains("本次未向 Windows 提交更改", StringComparison.Ordinal), "保存反馈伪装为系统应用。");
         });
         Check("再次保存保留上一份方案的精确字节备份", () =>
         {
@@ -536,7 +672,7 @@ internal static class FrontendChecks
         {
             var window = new ShellSettingsWindow(path: Path.Combine(run, "successful-inspect.json"), inspectPlan: _ => Task.FromResult("isolated success")); Windows.Add(window);
             int count = app.Windows.Count; Await(Inspect(window));
-            Require(app.Windows.Count == count && !window.IsVisible && Field<TextBlock>(window, "feedback").Text == "检查完成 · Windows 尚未修改", "离屏成功分支创建了窗口。");
+            Require(app.Windows.Count == count && !window.IsVisible && Field<TextBlock>(window, "feedback").Text == "检查完成 · 本次未向 Windows 提交更改", "离屏成功分支创建了窗口。");
         });
         Check("异步检查八秒超时后释放忙状态并忽略迟到结果", () =>
         {
@@ -652,3 +788,5 @@ internal static class FrontendChecks
         var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap)); using var stream = File.Create(Path.Combine(Output, name)); encoder.Save(stream); Screenshots.Add(name);
     }
 }
+
+

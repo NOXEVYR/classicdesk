@@ -26,6 +26,7 @@ public sealed class ShellServicePanel : Window
     readonly TextBlock status = Text("正在检查开机方案", 20, true);
     readonly TextBlock detail = Text("", 12);
     readonly TextBlock current = Text("读取中…", 13);
+    readonly TextBlock currentHeading = Text("已保存的开机方案", 12, true);
     readonly TextBlock changes = Text("", 12);
     readonly Button apply, disable, refresh;
     ShellServiceLayoutReview? review;
@@ -33,6 +34,9 @@ public sealed class ShellServicePanel : Window
     public string StatusText => status.Text;
     public bool ApplyAvailable => apply.IsEnabled;
     public bool IsWorking => busy;
+    public string ScheduledSummary => current.Text;
+    public string ScheduledHeading => currentHeading.Text;
+    public string ChangesText => changes.Text;
     public ShellServicePanel(ShellProfile profile, IShellServiceLayoutOperations? adapter = null)
     {
         profile.Validate(); proposal = profile; operations = adapter ?? new WindowsShellServiceLayoutOperations();
@@ -49,11 +53,14 @@ public sealed class ShellServicePanel : Window
         apply = Action("更新开机方案", async () => await ApplyAsync()); apply.Background = Brush("#637BDC"); apply.Foreground = Brushes.White; footer.Children.Add(apply);
         AutomationProperties.SetAutomationId(apply, "service-layout-apply"); AutomationProperties.SetAutomationId(disable, "service-disable-next-boot");
         var body = new StackPanel(); root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
-        body.Children.Add(status); detail.Margin = new Thickness(0, 10, 0, 20); detail.LineHeight = 21; body.Children.Add(detail);
-        body.Children.Add(Card("已保存的开机方案", current));
-        body.Children.Add(Card("本次更新方案", Text(Describe(profile), 13)));
+        var eyebrow = Text("系统配置 / 开机方案", 11, true); eyebrow.Foreground = Brush("#6576A6"); eyebrow.Margin = new Thickness(0, 0, 0, 6); body.Children.Add(eyebrow);
+        body.Children.Add(status); AutomationProperties.SetLiveSetting(status, AutomationLiveSetting.Polite); detail.Margin = new Thickness(0, 8, 0, 18); detail.LineHeight = 21; body.Children.Add(detail);
+        var boundary = Text("本地草稿  →  保存开机规则  →  重启后检查桌面效果", 12, true); boundary.Foreground = Brush("#4F6095");
+        body.Children.Add(new Border { Child = boundary, Background = Brush("#EAF0FF"), CornerRadius = new CornerRadius(9), Padding = new Thickness(14, 11, 14, 11), Margin = new Thickness(0, 0, 0, 16) });
+        body.Children.Add(Card(currentHeading, current));
+        body.Children.Add(Card(Text("本次提交的草稿", 12, true), Text(Describe(profile), 13)));
         changes.Margin = new Thickness(3, 12, 3, 8); changes.Foreground = Brush("#5D6E9C"); body.Children.Add(changes);
-        body.Children.Add(Text("点击更新后由 Windows 请求管理员授权。保存成功后，下次重启自动使用新规则；本次桌面继续使用原布局。方案包含任务栏、资源管理器和右键菜单；界面皮肤只改变 ClassicDesk 外观。", 12));
+        body.Children.Add(Text("更新时由 Windows 请求管理员授权。成功后仅安排下次启动加载，本次桌面继续使用原布局；实际效果需重启后检查。方案包含任务栏、资源管理器和右键菜单，界面皮肤只改变 ClassicDesk 外观。", 12));
         Loaded += (_, _) => _ = RefreshAsync();
         Closing += (_, e) => { if (writing) e.Cancel = true; };
         Closed += (_, _) => closed = true;
@@ -62,6 +69,7 @@ public sealed class ShellServicePanel : Window
     public async Task RefreshAsync()
     {
         if (busy || closed) return; review = null; SetBusy(true); status.Text = "正在检查开机方案";
+        currentHeading.Text = "已保存的开机方案"; current.Text = "正在读取，尚未取得本次检查结果。"; changes.Text = ""; detail.Text = "读取已登记的方案，不改变当前桌面。";
         try
         {
             var value = await operations.ReviewAsync(proposal);
@@ -71,7 +79,7 @@ public sealed class ShellServicePanel : Window
             detail.Text = value.Pending ? "下方展示的是下次启动使用的方案。再次更新会替换待生效方案，当前桌面保持原布局。" : "可将当前编辑的完整方案保存为开机规则。";
             changes.Text = value.Changes.Count == 0 ? "两套方案一致，无需更新。" : "将更新：" + string.Join("、", value.Changes);
         }
-        catch (Exception e) { if (!closed) { status.Text = "暂时无法管理开机方案"; detail.Text = e.Message; } }
+        catch (Exception e) { if (!closed) { status.Text = "暂时无法管理开机方案"; detail.Text = e.Message; current.Text = "未取得可核对的开机方案，请重新检查。"; changes.Text = ""; } }
         finally { if (!closed) SetBusy(false); }
     }
     public Task ApplyAsync() => ExecuteAsync(false);
@@ -84,8 +92,8 @@ public sealed class ShellServicePanel : Window
         detail.Text = "请完成 Windows 管理员授权，完成后即可关闭此窗口。";
         try
         {
-            if (stopping) { await operations.DisableAsync(captured); status.Text = "下次开机增强已停用"; detail.Text = "当前桌面保留，重启后不再自动加载。安装文件和方案记录仍保留。"; }
-            else { detail.Text = await operations.StageAsync(captured); status.Text = "开机方案已保存，等待重启"; }
+            if (stopping) { await operations.DisableAsync(captured); status.Text = "下次开机增强已停用"; detail.Text = "当前桌面保留，重启后不再自动加载。安装文件和方案记录仍保留。"; currentHeading.Text = "停用前保存的方案 · 留存快照"; changes.Text = "自动加载已停用；重新检查后可继续管理。"; }
+            else { detail.Text = await operations.StageAsync(captured); status.Text = "开机方案已保存，等待重启"; currentHeading.Text = "本次已提交的开机方案"; current.Text = Describe(captured.Proposal); changes.Text = "本次更新已提交。继续管理前请重新检查；当前桌面效果尚未验证。"; }
         }
         catch (System.ComponentModel.Win32Exception e) when (e.NativeErrorCode == 1223)
         { status.Text = "已取消管理员授权"; detail.Text = "本次未提交更新，可重新检查后再试。"; }
@@ -94,18 +102,18 @@ public sealed class ShellServicePanel : Window
     }
     void SetBusy(bool value) { busy = value; refresh.IsEnabled = !value; apply.IsEnabled = !value && review is { Changes.Count: > 0 }; disable.IsEnabled = !value && review is not null; }
     static string Describe(ShellProfile p) => $"{ShellPresets.DisplayName(p)} · {ShellSkins.All[ShellSkins.Index(p)].Name}\n" +
-        (p.SkipTaskbarLayout ? "任务栏布局增强关闭" : p.StartOnLeft ? "开始靠左 · 应用居中" : "开始与应用居中") +
+        (p.SkipTaskbarLayout ? "任务栏布局增强关闭" : ShellPresets.TaskbarLayoutName(p)) +
         $"\n图标 {p.IconSize} / 小图标 {p.SmallIconSize} · 栏高 {p.TaskbarHeight} · 按钮 {p.TaskbarButtonWidth} / 小按钮 {p.SmallTaskbarButtonWidth}" +
         (p.SkipTaskbarSizing ? "（尺寸增强关闭）" : "") +
-        $"\n左置：系统按钮 {(p.OtherSystemButtonsOnLeft ? "开" : "关")} / 开始菜单 {(p.StartMenuOnLeft ? "开" : "关")} / 搜索 {(p.SearchMenuOnLeft ? "开" : "关")}" +
+        (p.LeftAlignedApps ? "\n定位：Windows 原生左对齐，不启用开始/搜索定位模块" : $"\n左置：系统按钮 {(p.OtherSystemButtonsOnLeft ? "开" : "关")} / 开始菜单 {(p.StartMenuOnLeft ? "开" : "关")} / 搜索 {(p.SearchMenuOnLeft ? "开" : "关")}") +
         $"\n紧凑托盘 {(p.CompactTray ? "开" : "关")} · " + (p.FollowMaximizedTheme ? "最大化背景不透明，桌面透明" : p.TranslucentTaskbar ? "始终透明" : "系统原生背景") +
         "\n资源管理器：" + (p.ClassicRibbon ? "Win10 功能区（无标签页）" : p.UseClassicNavigationBar ? "经典导航栏（保留标签页）" : "Win11 原生") +
         "\n右键菜单：" + (p.ClassicContextMenu ? "完整菜单" + (p.ClassicMenuWithCtrl ? " · Ctrl 临时新版" : "") : "Win11 原生");
     static TextBlock Text(string text, double size, bool bold = false) => new() { Text = text, FontSize = size, FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal, TextWrapping = TextWrapping.Wrap, LineHeight = size * 1.8 };
     static SolidColorBrush Brush(string color) => new((Color)ColorConverter.ConvertFromString(color));
-    static Border Card(string title, TextBlock content)
+    static Border Card(TextBlock title, TextBlock content)
     {
-        var body = new StackPanel { Margin = new Thickness(16) }; body.Children.Add(Text(title, 12, true)); content.Margin = new Thickness(0, 6, 0, 0); body.Children.Add(content);
+        var body = new StackPanel { Margin = new Thickness(16) }; title.Foreground = Brush("#637296"); body.Children.Add(title); content.Margin = new Thickness(0, 8, 0, 0); body.Children.Add(content);
         return new Border { Child = body, CornerRadius = new CornerRadius(10), Background = Brushes.White, BorderBrush = Brush("#E0E5F0"), BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 0, 12) };
     }
     static Button Action(string label, Func<Task> action)

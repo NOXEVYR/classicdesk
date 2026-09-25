@@ -22,6 +22,29 @@ static class Program
         Test("failed inspection leaves update unavailable", () => { var host = new Fake { FailRead = true }; var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); Check(host.Writes == 0 && !panel.ApplyAvailable && panel.StatusText.Contains("无法")); panel.Close(); });
         Test("pending update displays staged state", () => { var host = new Fake { Pending = true }; var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); Check(panel.StatusText.Contains("等待重启")); panel.Close(); });
         Test("disable is explicit and does not claim current engine stopped", () => { var host = new Fake(); var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.DisableAsync().GetAwaiter().GetResult(); Check(host.Disables == 1 && panel.StatusText.Contains("下次开机") && !panel.ApplyAvailable); panel.Close(); });
+        Test("successful submission replaces old snapshot without automatic reread", () =>
+        {
+            var host = new Fake(); var panel = new ShellServicePanel(new ShellProfile(IconSize: 20), host);
+            panel.RefreshAsync().GetAwaiter().GetResult(); Check(panel.ScheduledSummary.Contains("图标 28"));
+            panel.ApplyAsync().GetAwaiter().GetResult();
+            Check(panel.ScheduledHeading == "本次已提交的开机方案" && panel.ScheduledSummary.Contains("图标 20") && !panel.ScheduledSummary.Contains("图标 28"));
+            Check(panel.ChangesText.Contains("已提交") && host.Reads == 1 && !panel.ApplyAvailable);
+            panel.ApplyAsync().GetAwaiter().GetResult(); Check(host.Writes == 1); panel.Close();
+        });
+        Test("failed reread clears previously valid comparison", () =>
+        {
+            var host = new Fake(); var panel = new ShellServicePanel(new(), host);
+            panel.RefreshAsync().GetAwaiter().GetResult(); Check(panel.ScheduledSummary.Contains("图标 28"));
+            host.FailRead = true; panel.RefreshAsync().GetAwaiter().GetResult();
+            Check(!panel.ScheduledSummary.Contains("图标 28") && panel.ScheduledSummary.Contains("未取得") && panel.ChangesText == "" && !panel.ApplyAvailable);
+            Check(host.Writes == 0); panel.Close();
+        });
+        Test("disable preserves clearly labelled retained snapshot", () =>
+        {
+            var host = new Fake(); var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); var snapshot = panel.ScheduledSummary;
+            panel.DisableAsync().GetAwaiter().GetResult();
+            Check(panel.ScheduledSummary == snapshot && panel.ScheduledHeading.Contains("留存快照") && panel.ChangesText.Contains("自动加载已停用") && host.Reads == 1); panel.Close();
+        });
         Test("review comparison renders at standard and minimum size", () =>
         {
             foreach (var (w,h) in new[] { (740,690), (610,500) })

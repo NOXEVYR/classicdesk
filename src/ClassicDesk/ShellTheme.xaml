@@ -8,46 +8,118 @@
     <Setter Property="BorderBrush" Value="#DFE0E7"/><Setter Property="BorderThickness" Value="1"/>
     <Setter Property="Padding" Value="15,9"/><Setter Property="MinHeight" Value="31"/>
     <Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/>
-    <Setter Property="Cursor" Value="Hand"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+    <Setter Property="Cursor" Value="Hand"/><Setter Property="SnapsToDevicePixels" Value="True"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
-      <Border x:Name="Face" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True"/></Border>
-      <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="#A0A4BD"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Face" Property="Opacity" Value="0.74"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="#313D8D"/><Setter TargetName="Face" Property="BorderThickness" Value="1.5"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Face" Property="Opacity" Value="0.40"/></Trigger></ControlTemplate.Triggers>
+      <Grid><Border x:Name="Face" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True"/></Border><Border x:Name="KeyboardRing" Margin="-3" CornerRadius="13" BorderThickness="1.5" BorderBrush="{DynamicResource AccentBrush}" Visibility="Collapsed" IsHitTestVisible="False"/></Grid>
+      <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Face" Property="Opacity" Value="0.74"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="KeyboardRing" Property="Visibility" Value="Visible"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Face" Property="Opacity" Value="0.40"/></Trigger></ControlTemplate.Triggers>
     </ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style TargetType="Button" BasedOn="{StaticResource ShellButton}"/>
   <Style x:Key="ShellPrimaryButton" TargetType="Button" BasedOn="{StaticResource ShellButton}"><Setter Property="Background" Value="{DynamicResource AccentBrush}"/><Setter Property="Foreground" Value="White"/><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Style>
-  <Style x:Key="ShellQuietButton" TargetType="Button" BasedOn="{StaticResource ShellButton}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="Foreground" Value="#8390A3"/><Setter Property="Padding" Value="8,6"/></Style>
-  <Style x:Key="ShellSegment" TargetType="Button" BasedOn="{StaticResource ShellButton}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="Padding" Value="12,7"/><Style.Triggers><Trigger Property="Tag" Value="selected"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#DFE5EE"/></Trigger></Style.Triggers></Style>
+  <Style x:Key="ShellQuietButton" TargetType="Button" BasedOn="{StaticResource ShellButton}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="Foreground" Value="#59697F"/><Setter Property="Padding" Value="8,6"/></Style>
+  <Style x:Key="ShellSegment" TargetType="Button" BasedOn="{StaticResource ShellButton}"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/><Setter Property="Padding" Value="12,7"/><Style.Triggers><Trigger Property="Tag" Value="selected"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></Trigger></Style.Triggers></Style>
   <Style x:Key="ShellPreviewSegment" TargetType="Button" BasedOn="{StaticResource ShellSegment}"><Setter Property="FontSize" Value="11"/><Setter Property="MinHeight" Value="25"/><Setter Property="Padding" Value="10,4"/></Style>
   <Style x:Key="ShellNavigation" TargetType="Button" BasedOn="{StaticResource ShellButton}">
     <Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Padding" Value="12,14"/><Setter Property="MinHeight" Value="49"/>
     <Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/>
-    <Style.Triggers><Trigger Property="Tag" Value="selected"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="#DFE5F7"/></Trigger></Style.Triggers>
+    <Style.Triggers><Trigger Property="Tag" Value="selected"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/></Trigger></Style.Triggers>
   </Style>
   <Style x:Key="ShellLayoutCard" TargetType="Button" BasedOn="{StaticResource ShellButton}">
     <Setter Property="Padding" Value="14,12"/>
-    <Style.Triggers><Trigger Property="Tag" Value="selected"><Setter Property="Background" Value="#EFF1F8"/><Setter Property="BorderBrush" Value="#6870A6"/></Trigger></Style.Triggers>
+    <Style.Triggers><Trigger Property="Tag" Value="selected"><Setter Property="Background" Value="#EFF1F8"/><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger></Style.Triggers>
   </Style>
   <Style x:Key="ShellCaptionButton" TargetType="Button" BasedOn="{StaticResource ShellButton}">
     <Setter Property="Width" Value="41"/><Setter Property="Height" Value="40"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="#748093"/><Setter Property="Padding" Value="0"/>
-    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="Face" Background="{TemplateBinding Background}" BorderThickness="1" BorderBrush="Transparent"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#E9EDF3"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="#313D8D"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Face" Property="Background" Value="#DFE5EF"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+    <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="Face" Background="{TemplateBinding Background}" BorderThickness="1" BorderBrush="Transparent"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#E9EDF3"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="Face" Property="Background" Value="#DFE5EF"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Face" Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style x:Key="ShellCloseButton" TargetType="Button" BasedOn="{StaticResource ShellCaptionButton}"><Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="#C74040"/></Trigger></Style.Triggers></Style>
+  <!-- Keep PART_ContentHost so native editing, selection, IME and context menus remain available. -->
+  <Style x:Key="ShellTextBox" TargetType="TextBox">
+    <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="Foreground" Value="#29374B"/>
+    <Setter Property="Background" Value="White"/>
+    <Setter Property="BorderBrush" Value="#DCE2EC"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="Padding" Value="11,8"/>
+    <Setter Property="MinHeight" Value="34"/>
+    <Setter Property="VerticalContentAlignment" Value="Center"/>
+    <Setter Property="SelectionBrush" Value="{DynamicResource AccentBrush}"/>
+    <Setter Property="SelectionOpacity" Value="0.25"/>
+    <Setter Property="CaretBrush" Value="{DynamicResource AccentBrush}"/>
+    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TextBox">
+          <Border x:Name="Face" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+          </Border>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+            <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
+            <Trigger Property="IsReadOnly" Value="True"><Setter TargetName="Face" Property="Background" Value="#F4F6FA"/></Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Face" Property="Opacity" Value="0.48"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+  <Style TargetType="TextBox" BasedOn="{StaticResource ShellTextBox}"/>
   <Style x:Key="ShellChoice" TargetType="ComboBox">
     <Setter Property="FontFamily" Value="Microsoft YaHei UI"/><Setter Property="FontSize" Value="12"/><Setter Property="Foreground" Value="#3C405B"/><Setter Property="Background" Value="#F5F6F8"/><Setter Property="BorderBrush" Value="#DEE0E8"/><Setter Property="BorderThickness" Value="1"/><Setter Property="MinHeight" Value="30"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox">
-      <Grid><ToggleButton Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="Face" CornerRadius="6" BorderThickness="1" Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}"><Path Data="M0,0 L3,3 L6,0" Stroke="#8797AB" StrokeThickness="1.2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="11,0"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="#ADC4E5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton>
+      <Grid><ToggleButton Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="Face" CornerRadius="6" BorderThickness="1" Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}"><Path Data="M0,0 L3,3 L6,0" Stroke="#8797AB" StrokeThickness="1.2" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="11,0"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton>
       <ContentPresenter Margin="11,6,29,6" IsHitTestVisible="False" HorizontalAlignment="Left" VerticalAlignment="Center" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
-      <Border x:Name="FocusRing" CornerRadius="6" BorderThickness="1.5" BorderBrush="#313D8D" Visibility="Collapsed" IsHitTestVisible="False"/>
+      <Border x:Name="FocusRing" CornerRadius="6" BorderThickness="1.5" BorderBrush="{DynamicResource AccentBrush}" Visibility="Collapsed" IsHitTestVisible="False"/>
       <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" AllowsTransparency="True" Focusable="False"><Border Background="White" BorderBrush="#DBE3EE" BorderThickness="1" CornerRadius="8" MinWidth="{TemplateBinding ActualWidth}" Padding="4" Margin="0,4,0,0"><ScrollViewer MaxHeight="270" CanContentScroll="True"><ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/></ScrollViewer></Border></Popup></Grid>
       <ControlTemplate.Triggers><Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="FocusRing" Property="Visibility" Value="Visible"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers>
     </ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style TargetType="ComboBox" BasedOn="{StaticResource ShellChoice}"/>
-  <Style TargetType="ComboBoxItem"><Setter Property="FontFamily" Value="Microsoft YaHei UI"/><Setter Property="Foreground" Value="#46576E"/><Setter Property="Padding" Value="9,7"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="Face" CornerRadius="5" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Face" Property="Background" Value="#EDEFF6"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="Face" Property="Background" Value="#DEE0EE"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-  <Style x:Key="ShellSwitch" TargetType="CheckBox"><Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="Cursor" Value="Hand"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><Grid x:Name="Face" Width="35" Height="23"><Border x:Name="Track" Height="21" CornerRadius="10.5" Background="#CCD3DC"/><Ellipse x:Name="Knob" Width="17" Height="17" Fill="White" Margin="2,0" HorizontalAlignment="Left"/></Grid><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="#2D3988"/><Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="#225BB4"/><Setter TargetName="Track" Property="BorderThickness" Value="1.5"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Opacity" Value="0.85"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Face" Property="Opacity" Value="0.35"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-  <Style x:Key="ShellExpander" TargetType="Expander"><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="#748399"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander"><StackPanel><ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" FocusVisualStyle="{x:Null}" HorizontalContentAlignment="Left"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="Face" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="3,8"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions><Path x:Name="Arrow" Data="M0,0 L3.5,3.5 L0,7" Stroke="#7D8CA0" StrokeThickness="1.1" Width="4" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"/><ContentPresenter Grid.Column="1" Content="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#EEF2F7"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="#6AA4F0"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><Border x:Name="Body" Visibility="Collapsed" Background="White" CornerRadius="9" BorderBrush="#E1E6EE" BorderThickness="1" Margin="0,4,0,0"><ContentPresenter/></Border></StackPanel><ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="Body" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
-  <Style TargetType="ScrollBar"><Setter Property="Width" Value="8"/><Setter Property="Background" Value="Transparent"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="Transparent"><Track x:Name="PART_Track" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border x:Name="Face" Background="#C7CFDA" CornerRadius="4" Margin="2,0"/><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#A6B3C5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter></Style>
+  <Style TargetType="ComboBoxItem"><Setter Property="FontFamily" Value="Microsoft YaHei UI"/><Setter Property="Foreground" Value="#46576E"/><Setter Property="Padding" Value="9,7"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="Face" CornerRadius="5" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Face" Property="Background" Value="#EDEFF6"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="Face" Property="Background" Value="#EDF0F7"/><Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+  <Style x:Key="ShellSwitch" TargetType="CheckBox"><Setter Property="FocusVisualStyle" Value="{x:Null}"/><Setter Property="Cursor" Value="Hand"/><Setter Property="VerticalAlignment" Value="Center"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><Grid x:Name="Face" Width="35" Height="23"><Border x:Name="Track" Height="21" CornerRadius="10.5" Background="#CCD3DC"/><Ellipse x:Name="Knob" Width="17" Height="17" Fill="White" Margin="2,0" HorizontalAlignment="Left"/><Border x:Name="SwitchFocusRing" Margin="-3,0" CornerRadius="13" BorderThickness="1.5" BorderBrush="{DynamicResource AccentBrush}" Visibility="Collapsed" IsHitTestVisible="False"/></Grid><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="SwitchFocusRing" Property="Visibility" Value="Visible"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Opacity" Value="0.85"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="Face" Property="Opacity" Value="0.35"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+  <Style x:Key="ShellExpander" TargetType="Expander"><Setter Property="FontSize" Value="11"/><Setter Property="Foreground" Value="#748399"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander"><StackPanel><ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" FocusVisualStyle="{x:Null}" HorizontalContentAlignment="Left"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="Face" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="6" Padding="3,8"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions><Path x:Name="Arrow" Data="M0,0 L3.5,3.5 L0,7" Stroke="#7D8CA0" StrokeThickness="1.1" Width="4" Height="7" HorizontalAlignment="Left" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"/><ContentPresenter Grid.Column="1" Content="{Binding Header, RelativeSource={RelativeSource AncestorType=Expander}}"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#EEF2F7"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Face" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><Border x:Name="Body" Visibility="Collapsed" Background="White" CornerRadius="9" BorderBrush="#E1E6EE" BorderThickness="1" Margin="0,4,0,0"><ContentPresenter/></Border></StackPanel><ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="Body" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter></Style>
+  <Style TargetType="ScrollBar">
+    <Setter Property="Width" Value="10"/>
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="Stylus.IsFlicksEnabled" Value="False"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ScrollBar">
+          <Grid Background="{TemplateBinding Background}">
+            <Track x:Name="PART_Track" IsDirectionReversed="True" Orientation="{TemplateBinding Orientation}">
+              <Track.DecreaseRepeatButton><RepeatButton x:Name="PageBack" Command="ScrollBar.PageUpCommand" Opacity="0" Focusable="False"/></Track.DecreaseRepeatButton>
+              <Track.Thumb>
+                <Thumb>
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                      <Border x:Name="Face" Background="#BDC7D6" CornerRadius="4" Margin="2"/>
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Face" Property="Background" Value="#8B9AB0"/></Trigger>
+                        <Trigger Property="IsDragging" Value="True"><Setter TargetName="Face" Property="Background" Value="{DynamicResource AccentBrush}"/></Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+              <Track.IncreaseRepeatButton><RepeatButton x:Name="PageForward" Command="ScrollBar.PageDownCommand" Opacity="0" Focusable="False"/></Track.IncreaseRepeatButton>
+            </Track>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+              <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False"/>
+              <Setter TargetName="PageBack" Property="Command" Value="ScrollBar.PageLeftCommand"/>
+              <Setter TargetName="PageForward" Property="Command" Value="ScrollBar.PageRightCommand"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+    <Style.Triggers>
+      <Trigger Property="Orientation" Value="Horizontal"><Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="10"/></Trigger>
+    </Style.Triggers>
+  </Style>
   <Style TargetType="ToolTip"><Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="#596C84"/><Setter Property="FontFamily" Value="Microsoft YaHei UI"/><Setter Property="FontSize" Value="12"/><Setter Property="MaxWidth" Value="340"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ToolTip"><Border Background="{TemplateBinding Background}" BorderBrush="#DCE5F0" BorderThickness="1" CornerRadius="7" Padding="11,8"><ContentPresenter/></Border></ControlTemplate></Setter.Value></Setter></Style>
   <Style x:Key="ShellFeatureChoice" TargetType="CheckBox">
     <Setter Property="Cursor" Value="Hand"/>
@@ -66,8 +138,8 @@
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Background" Value="#F3F5FC"/></Trigger>
-            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Box" Property="Background" Value="#5663AE"/><Setter TargetName="Box" Property="BorderBrush" Value="#5663AE"/><Setter TargetName="Mark" Property="Visibility" Value="Visible"/></Trigger>
-            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#8995CD"/></Trigger>
+            <Trigger Property="IsChecked" Value="True"><Setter TargetName="Box" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Box" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="Mark" Property="Visibility" Value="Visible"/></Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/></Trigger>
             <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Surface" Property="Opacity" Value="0.48"/></Trigger>
           </ControlTemplate.Triggers>
         </ControlTemplate>
@@ -75,3 +147,5 @@
     </Setter>
   </Style>
   </ResourceDictionary>
+
+

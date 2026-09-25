@@ -43,6 +43,35 @@ Test("all-centered profile independently journals alignment 0 to 1", f =>
     Check(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State == ShellActivationState.Restored);
     Check(f.Host.States[ActivationTarget.TaskbarAlignment].Data == "0");
 });
+foreach (var original in new[] { "0", "1", "" })
+    Test("all-left independently restores original alignment " + original, f =>
+    {
+        f.Profile = new(LeftAlignedApps: true);
+        f.Host.States[ActivationTarget.TaskbarAlignment] = new(original != "", original, "all-left-original");
+        var r = f.Activate(); Check(r.State == ShellActivationState.Active);
+        Check(f.Journal().Steps.Single(s => s.Change.Target == ActivationTarget.TaskbarAlignment).Change.DesiredData == "0");
+        Check(f.Host.States[ActivationTarget.TaskbarAlignment].Data == "0");
+        Check(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State == ShellActivationState.Restored);
+        Check(f.Host.States[ActivationTarget.TaskbarAlignment].Exists == (original != "") && f.Host.States[ActivationTarget.TaskbarAlignment].Data == original);
+    });
+foreach (var allLeft in new[] { false, true })
+    Test("host cannot substitute opposite alignment " + allLeft, f =>
+    {
+        f.Profile = new(LeftAlignedApps: allLeft); f.Host.ForcedAlignment = allLeft ? "1" : "0";
+        Reject(() => f.Capture()); Check(f.Host.Writes == 0 && f.Host.Starts == 0 && !Directory.Exists(f.LogDirectory));
+    });
+Test("skipped layout cannot receive malicious alignment write", f =>
+{
+    f.Profile = new(LeftAlignedApps: true, SkipTaskbarLayout: true); f.Host.ForcedAlignment = "1";
+    Reject(() => f.Capture()); Check(f.Host.Writes == 0 && f.Host.Starts == 0);
+});
+Test("all-left external alignment change blocks restore without overwriting", f =>
+{
+    f.Profile = new(LeftAlignedApps: true); f.Host.States[ActivationTarget.TaskbarAlignment] = new(true, "1", "original-centered");
+    var r = f.Activate(); f.Host.States[ActivationTarget.TaskbarAlignment] = new(true, "1", "external-centered");
+    Check(f.Core.Restore(f.Core.CaptureRestoreConfirmation(r.JournalId)).State == ShellActivationState.ManualReview);
+    Check(f.Host.States[ActivationTarget.TaskbarAlignment].Data == "1" && f.Host.Restores == 0 && f.Host.Stops == 0);
+});
 Test("already desired values create no ownership or rollback writes", f =>
 {
     foreach (var t in Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings)) f.Host.States[t] = new(true, FakeHost.Desired(t), "already-" + t);
@@ -272,6 +301,7 @@ sealed class FakeHost : IActivationHost
     public bool Running, Leased; public int Writes, Restores, Starts, Stops, Inspections, IntentChecks, LeaseAcquisitions;
     public ActivationTarget? FailTarget, FailRestoreTarget;
     public string WriteBehavior = "normal", StartBehavior = "normal", StopBehavior = "normal", RestoreBehavior = "normal";
+    public string? ForcedAlignment;
     public ActivationDaemonHealth? ForcedHealth;
     public ActivationDaemonIdentity? Identity;
     public Action<ActivationTarget>? AfterWrite, AfterRestore; public Action? AfterStop;
@@ -290,7 +320,10 @@ sealed class FakeHost : IActivationHost
     {
         Inspections++;
         var other = Other != ActivationPresence.Absent ? Other : Running && allowedDaemon != Identity ? ActivationPresence.Present : ActivationPresence.Absent;
-        return new(new(EnvironmentRevision, PackageRevision, Sab, other), Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings).Select(t => new ActivationChange(t, States[t], true, Desired(t))).ToArray());
+        return new(new(EnvironmentRevision, PackageRevision, Sab, other), Enum.GetValues<ActivationTarget>().Where(t => t <= ActivationTarget.EngineSettings).Select(t =>
+            t == ActivationTarget.TaskbarAlignment && profile.SkipTaskbarLayout && ForcedAlignment is null
+                ? new ActivationChange(t, States[t], States[t].Exists, States[t].Data)
+                : new ActivationChange(t, States[t], true, t == ActivationTarget.TaskbarAlignment ? ForcedAlignment ?? (profile.LeftAlignedApps ? "0" : "1") : Desired(t))).ToArray());
     }
     public ActivationItemState Read(VerifiedActivationPackage package, ActivationTarget target) => States[target];
     void CommitGuard(ActivationGuards guards)
@@ -346,4 +379,4 @@ sealed class FakeHost : IActivationHost
     }
     sealed class Lease(Action release) : IDisposable { public void Dispose() => release(); }
 }
-namespace ClassicDesk { public sealed record ShellPreviewOptions(bool ClassicRibbon, bool StartOnLeft, int IconSize, int TaskbarHeight, bool ClassicContextMenu, bool Mica = true, int TaskbarButtonWidth = 44, int SmallIconSize = 16, int SmallTaskbarButtonWidth = 32, bool OtherSystemButtonsOnLeft = true, bool StartMenuOnLeft = true, bool SearchMenuOnLeft = false, bool ClassicMenuWithCtrl = true, bool UseClassicNavigationBar = false); }
+namespace ClassicDesk { public sealed record ShellPreviewOptions(bool ClassicRibbon, bool StartOnLeft, int IconSize, int TaskbarHeight, bool ClassicContextMenu, bool Mica = true, int TaskbarButtonWidth = 44, int SmallIconSize = 16, int SmallTaskbarButtonWidth = 32, bool OtherSystemButtonsOnLeft = true, bool StartMenuOnLeft = true, bool SearchMenuOnLeft = false, bool ClassicMenuWithCtrl = true, bool UseClassicNavigationBar = false, bool LeftAlignedApps = false); }

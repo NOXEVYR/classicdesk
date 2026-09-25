@@ -1,3 +1,15 @@
+# 0.11.16-preview：UI 与任务栏功能增量
+
+2026-09-26 在发布源码上重新执行 `scripts/Test.ps1`，七组共 **372 项通过、0 失败**：Core 93、Host 106、Frontend 92、ReleaseBoundary 30、ServiceUI 12、AutoHide 19、ColdUpgrade 20。
+
+- 使用隔离文件、fake 系统宿主及 WPF 离屏渲染；未修改真实任务栏设置、安装服务、启用引擎或重启 Explorer。
+- 覆盖全靠左序列化与对齐事务、旧方案兼容、恢复归属、UI 草稿与重置、自动隐藏 intent/回读/冲突和日志损坏保护。
+- 未提供 ServiceBundle，未重跑需要离线组件包的 ShellService 和管理员安装检查；不得把历史记录计入本次 372 项。
+- 原生自动隐藏的真实触边、Windows 设置实际跳转、多屏、DPI、睡眠唤醒及完整替代仍待实机验收。Explorer 会话变化后保留自动隐藏记录并阻止后续写入，需人工核对。
+- 本次更新公开源码和预览版附件，不改变开发电脑的桌面快捷方式、已安装版本、Windows 设置或第三方工具。
+- 程序与源码 ZIP 以及独立 SHA256SUMS、构建来源由 Release 提供；原始报告和夹具仅保存在本地，避免公开机器路径。
+
+以下为历史版本记录，其本机安装和实测状态不等于本版本的新验收结果。
 # 0.11.15-preview：公开下载已更新
 
 - 发布程序 ZIP、源码 ZIP、SHA256SUMS 与构建清单，保留旧 Release；程序、源代码及字节摘要见 [发布记录](releases/0.11.15-preview/README.md)。

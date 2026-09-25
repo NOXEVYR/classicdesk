@@ -31,12 +31,6 @@ public static class ShellServiceLayout
         proposal.Validate();
         var service = ShellServiceStatus.Read();
         var root = Installation(service);
-        if (!proposal.SkipTaskbarLayout)
-        {
-            using var alignment = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced");
-            if (alignment?.GetValue("TaskbarAl") is not int value || value != 1)
-                throw new InvalidOperationException("应用居中需要 Windows 任务栏对齐为居中。当前值已变化，请先在 Windows 任务栏设置中确认；此次不会改写系统对齐值。");
-        }
         await RunInstallerAsync("Inspect", root, null, null, false);
         if (ShellServiceStatus.Read() != service) throw new IOException("开机组件状态已变化，请重新检查。");
         var receiptPath = Path.Combine(root, "install-record.json");
@@ -55,6 +49,15 @@ public static class ShellServiceLayout
         (receipt.TryGetProperty("TargetProfile", out var target) && target.ValueKind != JsonValueKind.Null
             ? target.Deserialize<ShellProfile>() : receipt.GetProperty("Source").GetProperty("AppliedProfile").Deserialize<ShellProfile>())
         ?? throw new InvalidDataException("安装记录缺少方案。");
+
+    public static void ValidateTaskbarAlignment(ShellProfile proposal, int? actual)
+    {
+        proposal.Validate();
+        if (proposal.SkipTaskbarLayout) return;
+        int expected = proposal.LeftAlignedApps ? 0 : 1;
+        if (actual != expected)
+            throw new InvalidOperationException("此开机方案需要 Windows 任务栏对齐为" + (expected == 0 ? "靠左" : "居中") + "。请先在 Windows 任务栏设置中确认；开机方案更新只保存组件规则，不改写系统对齐值。");
+    }
 
     public static ShellServiceBundle Prepare(ShellServiceLayoutReview review, string destination)
     {
@@ -107,6 +110,13 @@ public static class ShellServiceLayout
         if (current.Installation != review.Installation || current.ReceiptSha256 != review.ReceiptSha256)
             throw new IOException("检查后的开机方案已变化，请重新检查。");
         if (current.Changes.Count == 0) throw new InvalidOperationException("当前方案与开机方案相同。");
+        // Alignment is a prerequisite for updating, not for inspecting or disabling
+        // an existing installation. A different draft must never block recovery.
+        if (!review.Proposal.SkipTaskbarLayout)
+        {
+            using var alignment = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced");
+            ValidateTaskbarAlignment(review.Proposal, alignment?.GetValue("TaskbarAl") as int?);
+        }
         if (ShellServiceStatus.Read() is not { State: 4, StartMode: 2 })
             throw new InvalidOperationException("请先恢复开机组件的自动运行，再更新开机方案。");
         var parent = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassicDesk", "ServiceUpdates");

@@ -131,7 +131,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
             t == ActivationTarget.TaskbarAlignment && profile.SkipTaskbarLayout
                 ? new ActivationChange(t, before[t], before[t].Exists, before[t].Data)
                 : new ActivationChange(t, before[t], true,
-                    t == ActivationTarget.TaskbarAlignment ? "1" : Convert.ToBase64String(desired[t]))).ToArray());
+                    t == ActivationTarget.TaskbarAlignment ? (profile.LeftAlignedApps ? "0" : "1") : Convert.ToBase64String(desired[t]))).ToArray());
     }
     public ActivationItemState Read(VerifiedActivationPackage package, ActivationTarget target)
     {

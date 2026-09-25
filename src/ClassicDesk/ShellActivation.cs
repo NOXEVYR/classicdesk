@@ -523,14 +523,14 @@ public sealed class ShellActivationCoordinator(IActivationHost host, IActivation
         {
             if (!Enum.IsDefined(change.Target) || change.Before is null || string.IsNullOrWhiteSpace(change.Before.Revision)) throw new InvalidDataException("目标或修订无效。");
             ValidateValue(change.Target, change.Before.Exists, change.Before.Data); ValidateValue(change.Target, change.DesiredExists, change.DesiredData);
-            // Both supported layouts keep application buttons centered. StartOnLeft
-            // only controls the extra mod; alignment remains a separately owned write.
+            // Native application alignment remains a separately owned write;
+            // only the explicit all-left layout requests TaskbarAl=0.
             if (change.Target == ActivationTarget.TaskbarAlignment)
             {
                 if (profile.SkipTaskbarLayout && !SameValue(change.Before, change.DesiredExists, change.DesiredData))
                     throw new InvalidDataException("未选择任务栏布局时必须保留原始对齐值。");
-                if (!profile.SkipTaskbarLayout && (!change.DesiredExists || change.DesiredData != "1"))
-                    throw new InvalidDataException("两种布局均需明确、独立且可恢复的 TaskbarAl=1 对齐计划。");
+                if (!profile.SkipTaskbarLayout && (!change.DesiredExists || change.DesiredData != (profile.LeftAlignedApps ? "0" : "1")))
+                    throw new InvalidDataException("任务栏对齐计划必须匹配所选布局，且可独立恢复。");
             }
         }
     }
