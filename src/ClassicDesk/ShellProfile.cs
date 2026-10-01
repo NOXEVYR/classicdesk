@@ -42,7 +42,9 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
         ClassicContextMenu, TaskbarButtonWidth: TaskbarButtonWidth, SmallIconSize: SmallIconSize,
         SmallTaskbarButtonWidth: SmallTaskbarButtonWidth, OtherSystemButtonsOnLeft: OtherSystemButtonsOnLeft,
         StartMenuOnLeft: StartMenuOnLeft, SearchMenuOnLeft: SearchMenuOnLeft,
-        ClassicMenuWithCtrl: ClassicMenuWithCtrl, UseClassicNavigationBar: UseClassicNavigationBar, LeftAlignedApps: LeftAlignedApps);
+        ClassicMenuWithCtrl: ClassicMenuWithCtrl, UseClassicNavigationBar: UseClassicNavigationBar, LeftAlignedApps: LeftAlignedApps,
+        CompactTray: CompactTray, TranslucentTaskbar: TranslucentTaskbar, FollowMaximizedTheme: FollowMaximizedTheme,
+        SkipTaskbarLayout: SkipTaskbarLayout, SkipTaskbarSizing: SkipTaskbarSizing);
 }
 
 /// <summary>Per-review choices; projecting a draft never changes its saved values.</summary>

@@ -5,7 +5,7 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.11.16-preview</Version>
+    <Version>0.11.20-preview</Version>
     <AssemblyName>ClassicDesk</AssemblyName>
     <StartupObject>ClassicDesk.ShellProgram</StartupObject>
     <ApplicationIcon>Assets/ClassicDesk.ico</ApplicationIcon>
@@ -18,7 +18,10 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="ShellProfileOverview.cs" />
+    <Compile Include="ClassicStartProfile.cs;ClassicStartCatalog.cs;ClassicStartMenuWindow.cs;TaskbarDesignProfile.cs;TaskbarDesignLayout.cs;LayoutWorkbenchWindow.cs" />
     <Compile Include="TaskbarAutoHide.cs;TaskbarAutoHidePanel.cs" />
+    <Compile Include="FrontendUpdateModels.cs;FrontendUpdateFeed.cs;FrontendUpdateSchedule.cs;FrontendUpdateInstaller.cs;FrontendUpdatePanel.cs;FrontendUpdateCoordinator.cs" />
     <Compile Include="ShellServiceLayout.cs;ShellServicePanel.cs" />
     <Content Include="../../scripts/Install-ShellService.ps1" Link="Install-ShellService.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../scripts/Disable-ClassicDesk-NextBoot.vbs" Link="Disable-ClassicDesk-NextBoot.vbs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

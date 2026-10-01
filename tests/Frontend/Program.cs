@@ -196,7 +196,11 @@ internal static class FrontendChecks
             var draft = window.Draft; Logical<TextBox>(window).Single(t => AutomationProperties.GetAutomationId(t) == "library-name").Text = "Win10 · 樱月办公";
             Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "library-add"));
             Require(window.LibraryEntries.Single().Name == "Win10 · 樱月办公" && window.LibraryEntries.Single().Profile == draft && window.Draft == draft && !File.Exists(path), "方案库新增丢参数、改草稿或提前保存当前方案。");
-            Require(Logical<ComboBox>(window).Single(c => AutomationProperties.GetAutomationId(c) == "library-picker").SelectedItem?.ToString() == "Win10 · 樱月办公", "方案下拉框显示了内部记录而非名称。");
+            var entry = window.LibraryEntries.Single();
+            var card = Logical<FrameworkElement>(window).Single(c => AutomationProperties.GetAutomationId(c) == "library-entry-" + entry.Id.ToString("N"));
+            Require(Logical<TextBlock>(card).Any(t => t.Text == entry.Name), "方案卡片没有显示可读名称。");
+            Require(Logical<ShellProfileOverview>(card).Single().Profile == draft, "方案卡片缩略图没有显示完整已保存方案。");
+            Require(Logical<Button>(card).Single(b => AutomationProperties.GetAutomationId(b) == "library-load-" + entry.Id.ToString("N")).IsEnabled, "新增方案卡片没有可用载入入口。");
             var reopened = New(path); reopened.SelectPage(4); Require(reopened.LibraryEntries.Single().Profile == draft, "重开窗口没有读回方案库。");
             Capture(window, 1080, 820, "方案库-1080x820.png"); Capture(window, 740, 550, "方案库-740x550.png"); Bounds(window, 740, 550);
         });

@@ -26,6 +26,11 @@ public sealed class ShellSettingsWindow : Window
     readonly Grid footer;
     readonly StackPanel footerActions;
     readonly ShellPreview preview = new();
+    readonly ShellProfileOverview liveOverview = new();
+    ShellProfileOverview? currentOverview;
+    Border? currentOverviewSurface;
+    Button? scenarioButton, libraryScenarioButton;
+    ShellOverviewMode overviewMode;
     readonly List<Button> routes = [];
     readonly List<Button> presetTabs = [];
     readonly Button referenceButton;
@@ -46,12 +51,17 @@ public sealed class ShellSettingsWindow : Window
     readonly ShellProfileLibrary library;
     ShellLibrarySnapshot? librarySnapshot;
     Guid? librarySelection;
-    bool showArchived;
+    Guid? libraryRenameId;
+    string? libraryNameDraft;
+    bool showArchived, focusRenameRequested;
     (ShellProfile Before, ShellProfile Loaded)? libraryLoadUndo;
     readonly Func<ShellProfile, Task<string>> inspect;
     readonly Action<Window, ShellProfile>? manageNative;
     readonly Action<Window>? manageAutoHide;
     readonly Action? openTaskbarSettings;
+    readonly Action<Window>? manageUpdates;
+    readonly Action<Window>? manageLayouts;
+    bool externalOperation, updateExitRequested;
     readonly ScrollViewer scroll;
     ShellProfile saved;
     string? sourceRevision;
@@ -60,12 +70,28 @@ public sealed class ShellSettingsWindow : Window
     CancellationTokenSource? inspection;
     public ShellProfile Draft { get; private set; }
     public int ActivePage => page;
+    public string? UpdateBlockReason => closed ? "设置窗口已关闭。" : Draft != saved ? "请先保存或撤销设置草稿，再安装更新。" : busy || externalOperation ? "系统检查或外观操作正在进行，请完成后再更新。" : null;
+    public bool TryCloseForUpdate()
+    {
+        if (UpdateBlockReason is not null) return false;
+        updateExitRequested = true;
+        try { Close(); return closed; }
+        finally { updateExitRequested = false; }
+    }
+    void RunExternal(Action action)
+    {
+        if (externalOperation || closed || updateExitRequested) return;
+        externalOperation = true;
+        try { action(); } finally { externalOperation = false; }
+    }
 
     public ShellSettingsWindow(ShellProfile? initial = null, string? path = null, Func<ShellProfile, Task<string>>? inspectPlan = null, Action<Window, ShellProfile>? manageNative = null,
-        Action<Window>? manageAutoHide = null, Action? openTaskbarSettings = null)
+        Action<Window>? manageAutoHide = null, Action? openTaskbarSettings = null, Action<Window>? manageUpdates = null, Action<Window>? manageLayouts = null)
     {
         profilePath = path ?? ShellProfileFile.DefaultPath; this.manageNative = manageNative;
         this.manageAutoHide = manageAutoHide; this.openTaskbarSettings = openTaskbarSettings;
+        this.manageUpdates = manageUpdates;
+        this.manageLayouts = manageLayouts;
         library = new ShellProfileLibrary(profilePath + ".library.json");
         string? loadError = null;
         try { var snapshot = ShellProfileFile.Load(profilePath); saved = initial ?? snapshot.Profile; saved.Validate(); sourceRevision = snapshot.Revision; }
@@ -106,7 +132,7 @@ public sealed class ShellSettingsWindow : Window
         var sidebar = new Border { BorderBrush = Brush("#E4E7F2"), BorderThickness = new Thickness(0,1,1,0), Child = navigation }; sidebar.SetResourceReference(BackgroundProperty, "SidebarBrush"); body.Children.Add(sidebar);
         var workspace = new Grid { Margin = new Thickness(24, 20, 20, 12) }; workspace.RowDefinitions.Add(new() { Height = GridLength.Auto }); workspace.RowDefinitions.Add(new()); Grid.SetColumn(workspace, 1); body.Children.Add(workspace);
         var content = new StackPanel { Margin = new Thickness(0, 0, 4, 0) }; workspace.Children.Add(content);
-        settings.Margin = new Thickness(0, 0, 4, 8); scroll = new ScrollViewer { Content = settings, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; Grid.SetRow(scroll, 1); workspace.Children.Add(scroll);
+        settings.Margin = new Thickness(0, 0, 4, 8); scroll = new ScrollViewer { Content = settings, Focusable = false, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; Grid.SetRow(scroll, 1); workspace.Children.Add(scroll);
         var pageHeader = new Grid(); pageHeader.ColumnDefinitions.Add(new()); pageHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var words = new StackPanel(); words.Children.Add(heading); description.Foreground = Brush("#777985"); description.Margin = new Thickness(0, 4, 0, 0); words.Children.Add(description); pageHeader.Children.Add(words);
         skinPicker = Choice(ShellSkins.All.Select(p => p.Name).ToArray(), ShellSkins.Index(Draft), i => { if (!syncingScheme) ApplySkin(i); }, 158);
@@ -115,6 +141,8 @@ public sealed class ShellSettingsWindow : Window
         var tools = new WrapPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 14, 0, 0) }; pageTools = tools; var tabs = new StackPanel { Orientation = Orientation.Horizontal };
         for (int i = 0; i < ShellPresets.All.Count; i++) { int index = i; var tab = ActionButton(ShellPresets.All[i].Name, () => ApplyPreset(index)); tab.Style = (Style)FindResource("ShellPreviewSegment"); tab.ToolTip = "载入" + ShellPresets.All[i].Name + "参数，保留当前皮肤；保存前可撤销。"; AutomationProperties.SetAutomationId(tab,"shell-preset-tab-"+i); presetTabs.Add(tab); tabs.Children.Add(tab); }
         tools.Children.Add(new Border { Background = Brush("#E9EDF2"), CornerRadius = new CornerRadius(7), Padding = new Thickness(2), Child = tabs });
+        tools.Children.Add(OverviewModeButton());
+        var enlarge = ActionButton("放大预览", () => SelectPage(4)); enlarge.Style = (Style)FindResource("ShellQuietButton"); enlarge.Margin = new Thickness(9,0,0,0); AutomationProperties.SetAutomationId(enlarge, "shell-enlarge-overview"); tools.Children.Add(enlarge);
         var reset = ActionButton("重置本页", ResetPage); reset.Style = (Style)FindResource("ShellQuietButton"); reset.Margin = new Thickness(9, 0, 0, 0); reset.ToolTip = "重置此页方案；保存后才写入方案文件。"; AutomationProperties.SetAutomationId(reset, "shell-reset-page"); tools.Children.Add(reset); content.Children.Add(pageHeader); content.Children.Add(tools);
         var stateGrid = new Grid(); stateGrid.ColumnDefinitions.Add(new()); stateGrid.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var stateWords = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
@@ -130,6 +158,8 @@ public sealed class ShellSettingsWindow : Window
         previewCaption.Foreground = Brush("#52617C"); var previewInfo=new StackPanel { Orientation=Orientation.Horizontal }; previewCaption.VerticalAlignment=VerticalAlignment.Center;previewInfo.Children.Add(previewCaption);
         referenceButton=ActionButton("原生对比",()=>SetComparison(!preview.Before)); referenceButton.Style=(Style)FindResource("ShellQuietButton"); referenceButton.Foreground=Brush("#52618B"); referenceButton.FontSize=10;referenceButton.Padding=new Thickness(7,1,0,1);referenceButton.MinHeight=16;referenceButton.ToolTip="只查看 Windows 11 原生布局参考，不改变草稿。";AutomationProperties.SetAutomationId(referenceButton,"shell-reference");previewInfo.Children.Add(referenceButton); var previewInfoSurface = new Border { Background = Brush("#ECFFFFFF"), CornerRadius = new CornerRadius(6), Padding = new Thickness(7, 3, 7, 3), Child = previewInfo }; Grid.SetColumn(previewInfoSurface,1);previewHeader.Children.Add(previewInfoSurface);stageGrid.Children.Add(previewHeader);
         preview.Margin = new Thickness(14, 45, 14, 12); preview.VerticalAlignment = VerticalAlignment.Bottom; stageGrid.Children.Add(preview);
+        liveOverview.Margin = preview.Margin; liveOverview.VerticalAlignment = VerticalAlignment.Bottom;
+        AutomationProperties.SetAutomationId(liveOverview, "shell-live-overview"); stageGrid.Children.Add(liveOverview);
         previewStage = new Border { Height = 176, CornerRadius = new CornerRadius(14), Margin = new Thickness(0, 14, 0, 2), Child = stageGrid }; content.Children.Add(previewStage);
         root.SizeChanged += (_, e) => { compactLayout = e.NewSize.Height < 660; RefreshPreviewLayout(); };
         footer = new Grid { Margin = new Thickness(24, 10, 24, 11) }; footer.ColumnDefinitions.Add(new()); footer.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); footer.RowDefinitions.Add(new() { Height = GridLength.Auto }); footer.RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -138,14 +168,14 @@ public sealed class ShellSettingsWindow : Window
         undo = ActionButton("撤销", DiscardDraft); undo.Style = (Style)FindResource("ShellQuietButton"); undo.IsEnabled = false; undo.Margin = new Thickness(0, 0, 8, 0); AutomationProperties.SetAutomationId(undo, "shell-undo"); actions.Children.Add(undo);
         save = ActionButton("保存方案", SaveDraft); save.IsEnabled = false; save.Margin = new Thickness(0, 0, 8, 0); AutomationProperties.SetAutomationId(save, "shell-save"); actions.Children.Add(save);
         save.Style = (Style)FindResource("ShellPrimaryButton");
-        inspectButton = ActionButton("系统应用检查", () => { if (this.manageNative is null) _ = InspectAsync(); else this.manageNative(this, Draft); }); inspectButton.ToolTip = "检查组件、冲突和应用条件；保存方案不会自动启用增强。"; AutomationProperties.SetAutomationId(inspectButton, "shell-inspect"); actions.Children.Add(inspectButton);
+        inspectButton = ActionButton("系统应用检查", () => { if (this.manageNative is null) _ = InspectAsync(); else RunExternal(() => this.manageNative(this, Draft)); }); inspectButton.ToolTip = "检查组件、冲突和应用条件；保存方案不会自动启用增强。"; AutomationProperties.SetAutomationId(inspectButton, "shell-inspect"); actions.Children.Add(inspectButton);
         var footerBorder = new Border { Background = Brush("#FCFCFD"), BorderBrush = Brush("#E4E7ED"), BorderThickness = new Thickness(0, 1, 0, 0), Child = footer }; Grid.SetRow(footerBorder, 2); root.Children.Add(footerBorder);
         PreviewKeyDown += (_, e) => {
             if (e.Key == Key.S && Keyboard.Modifiers == ModifierKeys.Control) { SaveDraft(); e.Handled = true; }
             else if (e.Key == Key.O && Keyboard.Modifiers == ModifierKeys.Control) { PickImport(); e.Handled = true; }
             else if (e.Key == Key.S && Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift)) { PickExport(); e.Handled = true; }
         };
-        Closing += (_, e) => { if (IsVisible && Draft != saved && MessageBox.Show(this, "方案尚未保存。关闭后放弃本次编辑？", "ClassicDesk", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) != MessageBoxResult.OK) e.Cancel = true; };
+        Closing += (_, e) => { if (updateExitRequested) { e.Cancel = UpdateBlockReason is not null; return; } if (externalOperation) { e.Cancel = true; return; } if (IsVisible && Draft != saved && MessageBox.Show(this, "方案尚未保存。关闭后放弃本次编辑？", "ClassicDesk", MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) != MessageBoxResult.OK) e.Cancel = true; };
         Closed += (_, _) => { closed = true; inspection?.Cancel(); };
         SelectPage(0); SetComparison(false); UpdateSavedState(); if (loadError is not null) feedback.Text = loadError;
     }
@@ -154,6 +184,8 @@ public sealed class ShellSettingsWindow : Window
         var header = new Grid(); header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var brand = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(23, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center }; brand.Children.Add(AppIcons.View("brand", 23)); var name = Label("ClassicDesk", 14, true); name.VerticalAlignment = VerticalAlignment.Center; name.Margin = new Thickness(8, 0, 0, 0); brand.Children.Add(name); var version = Label(typeof(ShellSettingsWindow).Assembly.GetName().Version?.ToString(2) ?? "", 10); version.Foreground = Brush("#A4ACB8"); version.VerticalAlignment = VerticalAlignment.Center; version.Margin = new Thickness(8, 1, 0, 0); brand.Children.Add(version); name.Foreground = Brush("#303A53"); version.Foreground = Brush("#7E8BA3"); header.Children.Add(new Border { Width = 186, HorizontalAlignment = HorizontalAlignment.Left, Background = Brush("#F1F3FB"), Child = brand });
         var system = new StackPanel { Orientation = Orientation.Horizontal }; Grid.SetColumn(system, 1); header.Children.Add(system);
+        var layouts = ActionButton("布局与开始菜单", () => { try { RunExternal(() => manageLayouts?.Invoke(this)); } catch (Exception e) { feedback.Text = "布局工作区未打开：" + e.Message; } }); layouts.Style = (Style)FindResource("ShellQuietButton"); layouts.IsEnabled = manageLayouts is not null; layouts.Margin = new Thickness(8, 3, 4, 3); WindowChrome.SetIsHitTestVisibleInChrome(layouts, true); AutomationProperties.SetAutomationId(layouts, "shell-layout-workbench"); system.Children.Add(layouts);
+        var updates = ActionButton("软件更新", () => this.manageUpdates?.Invoke(this)); updates.Style = (Style)FindResource("ShellQuietButton"); updates.IsEnabled = manageUpdates is not null; updates.Margin = new Thickness(8, 3, 8, 3); WindowChrome.SetIsHitTestVisibleInChrome(updates, true); AutomationProperties.SetAutomationId(updates, "shell-updates"); system.Children.Add(updates);
         system.Children.Add(CaptionButton("最小化", "M 0,5 L 10,5", () => SystemCommands.MinimizeWindow(this)));
         var maximize = CaptionButton("最大化", "M 0,0 L 9,0 L 9,9 L 0,9 Z", () => { if (WindowState == WindowState.Maximized) SystemCommands.RestoreWindow(this); else SystemCommands.MaximizeWindow(this); }); system.Children.Add(maximize);
         StateChanged += (_, _) => AutomationProperties.SetName(maximize, WindowState == WindowState.Maximized ? "还原窗口" : "最大化");
@@ -171,10 +203,15 @@ public sealed class ShellSettingsWindow : Window
     { var button = new Button { Content = text, Style = (Style)FindResource(primary ? "ShellPrimaryButton" : "ShellButton") }; AutomationProperties.SetName(button, text); button.Click += (_, _) => action(); return button; }
     public void SelectPage(int index)
     {
-        if (index < 0 || index > 5) throw new ArgumentOutOfRangeException(nameof(index)); page = index;
+        if (index < 0 || index > 5) throw new ArgumentOutOfRangeException(nameof(index));
+        var priorFocus = Keyboard.FocusedElement as FrameworkElement;
+        var focusId = priorFocus is not null && settings.IsAncestorOf(priorFocus) ? AutomationProperties.GetAutomationId(priorFocus) : null;
+        if (index != page && index < 3) overviewMode = index == 2 ? ShellOverviewMode.ContextMenu : ShellOverviewMode.Desktop;
+        if (index != 4) currentOverview = null;
+        page = index;
         foreach (var (i, route) in sidebarRoutes) { route.Tag = i == index ? "selected" : null; var text = ((StackPanel)route.Content).Children.OfType<TextBlock>().Single(); text.Foreground = Brush(i == index ? "#5268C8" : "#69748C"); text.FontWeight = i == index ? FontWeights.SemiBold : FontWeights.Normal; }
         pageTools.Visibility = previewStage.Visibility = preview.Visibility = index < 3 ? Visibility.Visible : Visibility.Collapsed;
-        if (index >= 3) { settings.Children.Clear(); scroll.ScrollToTop(); if (index == 3) BuildPresets(); else if(index == 5) BuildSkins(); else BuildLibrary(); RefreshPreviewLayout(); return; }
+        if (index >= 3) { settings.Children.Clear(); scroll.ScrollToTop(); if (index == 3) BuildPresets(); else if(index == 5) BuildSkins(); else BuildLibrary(); RefreshPreviewLayout(); RestorePageFocus(focusId, priorFocus, index); return; }
         settings.Children.Clear(); dependentControls.Clear(); layoutChoices.Clear(); scroll.ScrollToTop(); preview.Kind = (ShellPreviewKind)index; preview.Height = index switch { 0 => 108, 1 => 176, _ => 174 };
         previewStage.Height = index == 0 ? 176 : 224;
         heading.Text = new[] { "任务栏布局", "资源管理器样式", "菜单体验" }[index]; description.Text = new[] { "调整开始按钮、图标和按钮尺寸", "在同一个资源管理器中切换工具区", "保留熟悉的完整菜单和快捷操作" }[index];
@@ -183,7 +220,7 @@ public sealed class ShellSettingsWindow : Window
             Section("布局方式");
             var layoutGrid = new System.Windows.Controls.Primitives.UniformGrid { Columns = 3 };
             for (int n = 0; n < 3; n++) {
-                bool left = n != 1, allLeft = n == 2; var card = ActionButton(allLeft ? "全靠左布局" : left ? "分开布局" : "集中布局", () => { Change(Draft with { StartOnLeft = left, LeftAlignedApps = allLeft }); SelectPage(0); });
+                bool left = n != 1, allLeft = n == 2; var card = ActionButton(allLeft ? "全靠左布局" : left ? "分开布局" : "集中布局", () => { Edit(Draft with { StartOnLeft = left, LeftAlignedApps = allLeft }); SelectPage(0); });
                 card.Style = (Style)FindResource("ShellLayoutCard"); card.HorizontalContentAlignment = HorizontalAlignment.Stretch; card.Margin = new Thickness(n == 0 ? 0 : 4, 0, n == 2 ? 0 : 4, 0); card.Padding = new Thickness(10, 12, 10, 12);
                 var stack = new StackPanel(); var mini = new Grid { Height = 20, Margin = new Thickness(0, 0, 0, 9) }; mini.Children.Add(new Border { Height = 20, Background = Brush("#E8E9EF"), CornerRadius = new CornerRadius(4) });
                 if (left) mini.Children.Add(new Border { Width = 8, Height = 8, Background = Brush("#303D8D"), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(8, 0, 0, 0), CornerRadius = new CornerRadius(2) });
@@ -198,25 +235,25 @@ public sealed class ShellSettingsWindow : Window
                 control.Width = double.NaN; control.HorizontalAlignment = HorizontalAlignment.Stretch; AutomationProperties.SetName(control,name); AutomationProperties.SetHelpText(control,help); control.ToolTip=help; panel.Children.Add(control);
                 sizeTiles.Children.Add(new Border { Background=Brushes.White, BorderBrush=Brush("#DEE0E8"), BorderThickness=new Thickness(1), CornerRadius=new CornerRadius(10), Padding=new Thickness(14,11,14,11), Margin=new Thickness(0,0,8,8), Child=panel });
             }
-            Tile("开始按钮位置", "全靠左使用 Windows 原生左对齐；其余两档应用居中。", Choice(["靠左", "居中", "开始与应用全靠左"], Draft.LeftAlignedApps ? 2 : Draft.StartOnLeft ? 0 : 1, i => Change(Draft with { StartOnLeft = i != 1, LeftAlignedApps = i == 2 })), "layout");
-            Tile("图标大小", "任务栏应用图标的尺寸。", PixelChoice(ShellProfile.IconSizes, Draft.IconSize, value => Change(Draft with { IconSize = value })), "appearance");
-            Tile("任务栏高度", "任务栏的整体高度。", PixelChoice(ShellProfile.TaskbarHeights, Draft.TaskbarHeight, value => Change(Draft with { TaskbarHeight = value })), "taskbar");
-            Tile("按钮宽度", "按钮宽度控制图标两侧留白；与图标大小分别设置。", PixelChoice(ShellProfile.ButtonWidths, Draft.TaskbarButtonWidth, value => Change(Draft with { TaskbarButtonWidth = value })), "system");
+            Tile("开始按钮位置", "全靠左使用 Windows 原生左对齐；其余两档应用居中。", Choice(["靠左", "居中", "开始与应用全靠左"], Draft.LeftAlignedApps ? 2 : Draft.StartOnLeft ? 0 : 1, i => Edit(Draft with { StartOnLeft = i != 1, LeftAlignedApps = i == 2 })), "layout");
+            Tile("图标大小", "任务栏应用图标的尺寸。", PixelChoice(ShellProfile.IconSizes, Draft.IconSize, value => Edit(Draft with { IconSize = value })), "appearance");
+            Tile("任务栏高度", "任务栏的整体高度。", PixelChoice(ShellProfile.TaskbarHeights, Draft.TaskbarHeight, value => Edit(Draft with { TaskbarHeight = value })), "taskbar");
+            Tile("按钮宽度", "按钮宽度控制图标两侧留白；与图标大小分别设置。", PixelChoice(ShellProfile.ButtonWidths, Draft.TaskbarButtonWidth, value => Edit(Draft with { TaskbarButtonWidth = value })), "system");
             settings.Children.Add(sizeTiles);
             var advancedRows = new StackPanel();
-            AddRow(advancedRows, "启用布局调整", "关闭时保留当前位置参数与设计预览。", Toggle(!Draft.SkipTaskbarLayout, value => Change(Draft with { SkipTaskbarLayout = !value })));
-            AddRow(advancedRows, "启用尺寸调整", "关闭时保留图标、栏高和按钮尺寸参数。", Toggle(!Draft.SkipTaskbarSizing, value => Change(Draft with { SkipTaskbarSizing = !value })));
+            AddRow(advancedRows, "启用布局调整", "关闭时保留当前位置参数与设计预览。", Toggle(!Draft.SkipTaskbarLayout, value => Edit(Draft with { SkipTaskbarLayout = !value })));
+            AddRow(advancedRows, "启用尺寸调整", "关闭时保留图标、栏高和按钮尺寸参数。", Toggle(!Draft.SkipTaskbarSizing, value => Edit(Draft with { SkipTaskbarSizing = !value })));
             Section("背景与托盘", "随任务栏布局增强应用；动态背景当前仅支持主屏。");
             var appearanceRows = Group();
-            var translucent = Toggle(Draft.TranslucentTaskbar, value => Change(Draft with { TranslucentTaskbar = value, FollowMaximizedTheme = value && Draft.FollowMaximizedTheme })); dependentControls["translucent"] = translucent;
+            var translucent = Toggle(Draft.TranslucentTaskbar, value => Edit(Draft with { TranslucentTaskbar = value, FollowMaximizedTheme = value && Draft.FollowMaximizedTheme })); dependentControls["translucent"] = translucent;
             AddRow(appearanceRows, "透明任务栏", "透出桌面背景，保留图标、文字与运行指示条。", translucent);
-            var follow = Toggle(Draft.FollowMaximizedTheme, value => Change(Draft with { FollowMaximizedTheme = value, TranslucentTaskbar = value || Draft.TranslucentTaskbar })); dependentControls["follow"] = follow;
+            var follow = Toggle(Draft.FollowMaximizedTheme, value => Edit(Draft with { FollowMaximizedTheme = value, TranslucentTaskbar = value || Draft.TranslucentTaskbar }, ShellOverviewMode.Maximized)); dependentControls["follow"] = follow;
             AddRow(appearanceRows, "最大化或全屏时不透明", "本屏仍有可见的最大化背景窗口时不透明；其上小窗口获得焦点也保持不透明。", follow);
-            AddRow(appearanceRows, "紧凑系统托盘", "收紧右侧按钮间距，保留图标大小和单行排列。", Toggle(Draft.CompactTray, value => Change(Draft with { CompactTray = value })), true);
+            AddRow(appearanceRows, "紧凑系统托盘", "收紧右侧按钮间距，保留图标大小和单行排列。", Toggle(Draft.CompactTray, value => Edit(Draft with { CompactTray = value })), true);
             Section("Windows 任务栏行为", "独立管理系统行为，不随本地布局草稿保存。");
             var nativeRows = Group();
             var autoHide = ActionButton("检查与调整…", () => {
-                try { this.manageAutoHide?.Invoke(this); }
+                try { RunExternal(() => this.manageAutoHide?.Invoke(this)); }
                 catch (Exception e) { feedback.Text = "自动隐藏未打开：" + e.Message; }
             }); autoHide.IsEnabled = this.manageAutoHide is not null; AutomationProperties.SetAutomationId(autoHide, "shell-auto-hide");
             AddRow(nativeRows, "自动隐藏任务栏", "无需增强引擎；独立检查、确认应用与恢复，不自动重启 Explorer。", autoHide);
@@ -225,28 +262,44 @@ public sealed class ShellSettingsWindow : Window
                 catch (Exception e) { feedback.Text = "无法打开 Windows 设置：" + e.Message; }
             }); systemSettings.IsEnabled = this.openTaskbarSettings is not null; AutomationProperties.SetAutomationId(systemSettings, "shell-windows-taskbar");
             AddRow(nativeRows, "合并按钮与文字标签", "在系统任务栏设置中调整；选项依 Windows 版本而异，ClassicDesk 不接管这些值。", systemSettings, true);
-            AddRow(advancedRows, "小图标尺寸", "Windows 使用小图标模式时的尺寸。", PixelChoice(ShellProfile.IconSizes, Draft.SmallIconSize, value => Change(Draft with { SmallIconSize = value })));
-            AddRow(advancedRows, "小按钮宽度", "Windows 使用小图标模式时的按钮宽度。", PixelChoice(ShellProfile.ButtonWidths, Draft.SmallTaskbarButtonWidth, value => Change(Draft with { SmallTaskbarButtonWidth = value })));
-            var system = Toggle(Draft.OtherSystemButtonsOnLeft, value => Change(Draft with { OtherSystemButtonsOnLeft = value })); dependentControls["otherButtons"] = system; AddRow(advancedRows, "其他系统按钮靠左", "搜索、任务视图和小组件；居中或全靠左时不生效；全靠左跟随 Windows 原生定位。", system);
-            var start = Toggle(Draft.StartMenuOnLeft, value => Change(Draft with { StartMenuOnLeft = value })); dependentControls["startMenu"] = start; AddRow(advancedRows, "开始菜单靠左展开", "居中或全靠左时不生效；全靠左跟随 Windows 原生定位。", start);
-            var search = Toggle(Draft.SearchMenuOnLeft, value => Change(Draft with { SearchMenuOnLeft = value })); dependentControls["searchMenu"] = search; AddRow(advancedRows, "所有入口的搜索都靠左", "包含 Win+S 和任务栏搜索；全靠左使用原生定位，其余需开始菜单靠左。", search, true);
+            AddRow(advancedRows, "小图标尺寸", "Windows 使用小图标模式时的尺寸。", PixelChoice(ShellProfile.IconSizes, Draft.SmallIconSize, value => Edit(Draft with { SmallIconSize = value }, ShellOverviewMode.SmallIcons)));
+            AddRow(advancedRows, "小按钮宽度", "Windows 使用小图标模式时的按钮宽度。", PixelChoice(ShellProfile.ButtonWidths, Draft.SmallTaskbarButtonWidth, value => Edit(Draft with { SmallTaskbarButtonWidth = value }, ShellOverviewMode.SmallIcons)));
+            var system = Toggle(Draft.OtherSystemButtonsOnLeft, value => Edit(Draft with { OtherSystemButtonsOnLeft = value })); dependentControls["otherButtons"] = system; AddRow(advancedRows, "其他系统按钮靠左", "搜索、任务视图和小组件；居中或全靠左时不生效；全靠左跟随 Windows 原生定位。", system);
+            var start = Toggle(Draft.StartMenuOnLeft, value => Edit(Draft with { StartMenuOnLeft = value }, ShellOverviewMode.StartMenu)); dependentControls["startMenu"] = start; AddRow(advancedRows, "开始菜单靠左展开", "居中或全靠左时不生效；全靠左跟随 Windows 原生定位。", start);
+            var search = Toggle(Draft.SearchMenuOnLeft, value => Edit(Draft with { SearchMenuOnLeft = value }, ShellOverviewMode.Search)); dependentControls["searchMenu"] = search; AddRow(advancedRows, "所有入口的搜索都靠左", "包含 Win+S 和任务栏搜索；全靠左使用原生定位，其余需开始菜单靠左。", search, true);
             var advanced = new Expander { Header = "高级布局", Content = advancedRows, IsExpanded = advancedExpanded, Style = (Style)FindResource("ShellExpander"), Margin = new Thickness(0, 10, 0, 0) }; AutomationProperties.SetAutomationId(advanced, "shell-advanced"); advanced.Expanded += (_, _) => advancedExpanded = true; advanced.Collapsed += (_, _) => advancedExpanded = false; settings.Children.Add(advanced);
         }
         else if (index == 1)
         {
             Section("工具区", "保留熟悉的操作习惯，选择适合自己的工具栏。");
             var group = Group(); int style = Draft.ClassicRibbon ? 1 : Draft.UseClassicNavigationBar ? 2 : 0;
-            AddRow(group, "工具区样式", "功能区与经典导航栏是不同模式。", Choice(["Windows 11 命令栏", "Windows 10 功能区", "经典导航栏"], style, i => Change(Draft with { ClassicRibbon = i == 1, UseClassicNavigationBar = i == 2 }), 210), true);
+            AddRow(group, "工具区样式", "功能区与经典导航栏是不同模式。", Choice(["Windows 11 命令栏", "Windows 10 功能区", "经典导航栏"], style, i => Edit(Draft with { ClassicRibbon = i == 1, UseClassicNavigationBar = i == 2 }), 210), true);
             AddNote(Draft.ClassicRibbon ? "主页、共享、查看完整展开；此模式不保留 Windows 11 标签页。" : Draft.UseClassicNavigationBar ? "采用旧版 Windows 11 导航布局，保留标签页。" : "使用当前 Windows 11 命令栏与标签页。", "explorer-mode-note");
         }
         else
         {
             Section("菜单行为");
-            var group = Group(); AddRow(group, "完整右键菜单", "直接展开完整的 Shell 命令。", Toggle(Draft.ClassicContextMenu, value => Change(Draft with { ClassicContextMenu = value })));
-            var ctrl = Toggle(Draft.ClassicMenuWithCtrl, value => Change(Draft with { ClassicMenuWithCtrl = value })); dependentControls["ctrlMenu"] = ctrl; AddRow(group, "按 Ctrl 临时使用新版", "开启完整菜单时，按住 Ctrl 可临时切回新版菜单。", ctrl, true);
+            var group = Group(); AddRow(group, "完整右键菜单", "直接展开完整的 Shell 命令。", Toggle(Draft.ClassicContextMenu, value => Edit(Draft with { ClassicContextMenu = value }, ShellOverviewMode.ContextMenu)));
+            var ctrl = Toggle(Draft.ClassicMenuWithCtrl, value => Edit(Draft with { ClassicMenuWithCtrl = value }, ShellOverviewMode.CtrlContextMenu)); dependentControls["ctrlMenu"] = ctrl; AddRow(group, "按 Ctrl 临时使用新版", "开启完整菜单时，按住 Ctrl 可临时切回新版菜单。", ctrl, true);
             AddNote("菜单命令由文件类型与已安装的扩展决定。", "context-note");
         }
         preview.Options = Draft.PreviewOptions; UpdateDependencies(); UpdatePreviewDetails(); RefreshPreviewLayout();
+        RestorePageFocus(focusId, priorFocus, index);
+    }
+    void RestorePageFocus(string? id, FrameworkElement? prior, int expectedPage)
+    {
+        if (string.IsNullOrEmpty(id) || !IsVisible || !IsActive) return;
+        _ = Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() => {
+            if (!IsVisible || !IsActive || page != expectedPage || (Keyboard.FocusedElement is not null && Keyboard.FocusedElement != prior)) return;
+            IEnumerable<FrameworkElement> Walk(DependencyObject node) {
+                foreach (var child in LogicalTreeHelper.GetChildren(node).OfType<DependencyObject>()) {
+                    if (child is FrameworkElement element) yield return element;
+                    foreach (var nested in Walk(child)) yield return nested;
+                }
+            }
+            var target = Walk(settings).FirstOrDefault(e => AutomationProperties.GetAutomationId(e) == id && e.IsEnabled && e.IsVisible);
+            if (target is not null) target.Focus(); else if (sidebarRoutes.TryGetValue(expectedPage, out var route)) route.Focus();
+        }));
     }
     StackPanel Group()
     { var rows = new StackPanel(); settings.Children.Add(new Border { Background = Brushes.White, BorderBrush = Brush("#E1E6EE"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Child = rows }); return rows; }
@@ -302,69 +355,149 @@ public sealed class ShellSettingsWindow : Window
         }
         settings.Children.Add(gallery);
     }
+    string OverviewModeCaption => overviewMode switch { ShellOverviewMode.Maximized => "窗口最大化", ShellOverviewMode.SmallIcons => "小图标", ShellOverviewMode.StartMenu => "开始菜单", ShellOverviewMode.Search => "搜索入口", ShellOverviewMode.ContextMenu => "右键菜单", ShellOverviewMode.CtrlContextMenu => "Ctrl 菜单", _ => "普通桌面" };
+    ContextMenu CreateShellMenu(Button target)
+    {
+        var menu = new ContextMenu { PlacementTarget = target, Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom, HorizontalOffset = -4, VerticalOffset = 5 };
+        menu.Resources.MergedDictionaries.Add(Resources.MergedDictionaries[0]);
+        menu.Style = (Style)FindResource("ShellContextMenu");
+        void SyncPalette() { foreach (var key in new[] { "AccentBrush", "SidebarBrush", "WorkspaceBrush" }) menu.Resources[key] = Resources[key]; }
+        SyncPalette(); menu.Opened += (_, _) => SyncPalette(); target.ContextMenu = menu;
+        return menu;
+    }
+    Button OverviewModeButton(bool libraryPage = false)
+    {
+        var button = ActionButton(OverviewModeCaption + " ▾", () => { }); button.Style = (Style)FindResource("ShellQuietButton"); button.Margin = new Thickness(8, 0, 0, 0);
+        button.ToolTip = "切换预览状态，查看只在特定场景生效的设置";
+        AutomationProperties.SetAutomationId(button, libraryPage ? "library-preview-scenarios" : "shell-preview-scenarios");
+        if (libraryPage) libraryScenarioButton = button; else scenarioButton = button;
+        var menu = CreateShellMenu(button);
+        foreach (var (mode, title) in new[] { (ShellOverviewMode.Desktop, "桌面 · 普通窗口"), (ShellOverviewMode.Maximized, "窗口最大化"), (ShellOverviewMode.SmallIcons, "小图标模式"), (ShellOverviewMode.StartMenu, "展开开始菜单"), (ShellOverviewMode.Search, "展开搜索"), (ShellOverviewMode.ContextMenu, "右键菜单"), (ShellOverviewMode.CtrlContextMenu, "按住 Ctrl 的右键菜单") }) {
+            var item = new MenuItem { Header = title, IsCheckable = true, Style = (Style)FindResource("ShellMenuItem") }; AutomationProperties.SetAutomationId(item, "overview-mode-" + mode);
+            item.Click += (_, _) => SetOverviewMode(mode); menu.Opened += (_, _) => item.IsChecked = overviewMode == mode; menu.Items.Add(item);
+        }
+        button.Click += (_, _) => menu.IsOpen = true; return button;
+    }
+    public void SetOverviewMode(ShellOverviewMode mode)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        overviewMode = mode; UpdatePreviewDetails();
+    }
+    void SyncOverviews()
+    {
+        liveOverview.Profile = preview.Before ? new ShellProfile(StartOnLeft: false, ClassicRibbon: false, ClassicContextMenu: false, Appearance: "win11", Skin: Draft.Skin) : Draft;
+        liveOverview.Mode = overviewMode;
+        previewStage.ToolTip = liveOverview.Explanation;
+        AutomationProperties.SetHelpText(liveOverview, liveOverview.Explanation);
+        if (scenarioButton is not null) scenarioButton.Content = OverviewModeCaption + " ▾";
+        if (libraryScenarioButton is not null) libraryScenarioButton.Content = OverviewModeCaption + " ▾";
+        if (currentOverview is not null) {
+            currentOverview.Profile = Draft; currentOverview.Mode = overviewMode;
+            AutomationProperties.SetHelpText(currentOverview, currentOverview.Explanation);
+            if (currentOverviewSurface is not null) currentOverviewSurface.ToolTip = currentOverview.Explanation;
+        }
+    }
+    Button LibraryAction(string title, string id, Action action, bool primary = false)
+    {
+        var button = ActionButton(title, () => { try { action(); } catch (Exception e) { feedback.Text = "方案操作未完成，原数据保留：" + e.Message; } }, primary);
+        AutomationProperties.SetAutomationId(button, id); return button;
+    }
+    string CurrentEditingName => librarySelection is { } selectedId && librarySnapshot?.Entries.FirstOrDefault(e => e.Id == selectedId && !e.Archived && e.Profile == Draft) is { } selectedEntry ? selectedEntry.Name : ShellPresets.DisplayName(Draft);
     void BuildLibrary()
     {
-        heading.Text = "方案与备份"; description.Text = "保存、迁移和找回设置，让每一次调整都有来处。";
+        heading.Text = "我的方案"; description.Text = "先看效果，再选择。预览和保存不会自动改变 Windows。";
+        var current = new StackPanel();
+        var currentHeader = new Grid { Margin = new Thickness(0, 0, 0, 8) }; currentHeader.ColumnDefinitions.Add(new()); currentHeader.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var editingName = CurrentEditingName;
+        var words = new StackPanel(); var editingTitle = Label("正在编辑 · " + editingName, 15, true);
+        editingTitle.TextWrapping = TextWrapping.NoWrap; editingTitle.TextTrimming = TextTrimming.CharacterEllipsis; editingTitle.ToolTip = editingName; words.Children.Add(editingTitle);
+        var state = Label(Draft == saved ? "本地设置 · 编辑预览" : "有未保存更改 · 编辑预览", 10); state.Foreground = Brush("#6D7E9B"); words.Children.Add(state); currentHeader.Children.Add(words);
+        var scenarios = OverviewModeButton(true); Grid.SetColumn(scenarios, 1); scenarios.VerticalAlignment = VerticalAlignment.Center; currentHeader.Children.Add(scenarios); current.Children.Add(currentHeader);
+        currentOverview = new ShellProfileOverview { Profile = Draft, Mode = overviewMode, Height = compactLayout ? 200 : 360 };
+        AutomationProperties.SetAutomationId(currentOverview, "library-current-overview");
+        AutomationProperties.SetName(currentOverview, "当前编辑方案的桌面布局示意");
+        currentOverviewSurface = new Border { Child = currentOverview, CornerRadius = new CornerRadius(10), ClipToBounds = true, Background = Brush("#ECF0FA"), ToolTip = currentOverview.Explanation };
+        AutomationProperties.SetHelpText(currentOverview, currentOverview.Explanation);
+        current.Children.Add(currentOverviewSurface);
+        var summary = Label(ShellPresets.TaskbarLayoutName(Draft) + $"  ·  {Draft.IconSize} px 图标 / {Draft.TaskbarHeight} px 高度  ·  " + ShellSkins.All[ShellSkins.Index(Draft)].Name, 11);
+        summary.Margin = new Thickness(0, 8, 0, 0); summary.Foreground = Brush("#61718E"); current.Children.Add(summary);
         var changed = ShellPresets.Changes(saved, Draft);
-        if (changed.Count > 0)
-        {
-            Section("待保存更改", "以下为相对本地已保存方案的差异，不代表系统当前状态。");
-            AddNote("已修改 " + changed.Count + " 项：" + string.Join("、", changed), "shell-change-summary");
-        }
+        if (changed.Count > 0) AddNote("待保存 " + changed.Count + " 项：" + string.Join("、", changed), "shell-change-summary");
+        settings.Children.Add(new Border { Child = current, Background = Brushes.White, CornerRadius = new CornerRadius(12), BorderBrush = Brush("#E1E6F1"), BorderThickness = new Thickness(1), Padding = new Thickness(14), Margin = new Thickness(0, changed.Count > 0 ? 10 : 0, 0, 0) });
         BuildSavedLibrary();
-        Section("当前方案", Draft == saved ? "草稿与本次打开或最近保存的方案一致。" : "以下修改尚未保存，其他页面的编辑也会一并保留。");
-        var summary = Group();
-        AddRow(summary, "布局与皮肤", "", Label(ShellPresets.DisplayName(Draft) + "\n" + ShellSkins.All[ShellSkins.Index(Draft)].Name, 11));
-        AddRow(summary, "任务栏", "", Label(ShellPresets.TaskbarLayoutName(Draft) + $"\n{Draft.IconSize} px 图标 / {Draft.TaskbarHeight} px 高度", 11));
-        AddRow(summary, "资源管理器", "", Label(Draft.ClassicRibbon ? "Windows 10 功能区" : Draft.UseClassicNavigationBar ? "经典导航栏" : "Windows 11 命令栏", 11));
-        AddRow(summary, "右键菜单", "", Label(Draft.ClassicContextMenu ? "完整菜单" : "Windows 11 菜单", 11), true);
-        Section("导入与备份"); var files = Group();
-        var import = ActionButton("导入…", PickImport); AutomationProperties.SetAutomationId(import, "shell-import"); AddRow(files, "导入方案", "载入 JSON 到草稿，保存前不覆盖当前方案。  Ctrl+O", import);
-        var export = ActionButton("导出…", PickExport); AutomationProperties.SetAutomationId(export, "shell-export"); AddRow(files, "导出当前草稿", "包含还未保存的参数，方便备份和迁移。  Ctrl+Shift+S", export);
-        var restore = ActionButton("载入上一份", () => { try { RestorePreviousDraft(); } catch (Exception e) { feedback.Text = "恢复未完成：" + e.Message; } });
-        restore.IsEnabled = File.Exists(profilePath + ".previous"); AutomationProperties.SetAutomationId(restore, "shell-restore-previous"); AddRow(files, "上一份保存", "载入上次保存的备份，确认后再保存。", restore, true);
-        AddNote("本页只管理 ClassicDesk 的方案文件。系统效果请通过右下角的应用检查确认。", "shell-library-note");
+        editingTitle.Text = "正在编辑 · " + CurrentEditingName; editingTitle.ToolTip = CurrentEditingName;
+        var starters = new StackPanel();
+        var gallery = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
+        for (int i = 0; i < ShellPresets.All.Count; i++) {
+            int index = i; var preset = ShellPresets.All[i]; var panel = new StackPanel();
+            panel.Children.Add(new ShellProfileOverview { Profile = preset.Profile with { Skin = Draft.Skin }, Thumbnail = true, Height = 100 });
+            panel.Children.Add(Label(preset.Name, 12, true)); var detail = Label(preset.Description, 10); detail.Margin = new Thickness(0, 3, 0, 0); detail.Foreground = Brush("#7383A0"); panel.Children.Add(detail);
+            var button = LibraryAction(preset.Name + " · 预览", "library-starter-" + i, () => ApplyPreset(index)); button.Content = panel; button.HorizontalContentAlignment = HorizontalAlignment.Stretch; button.Padding = new Thickness(10); button.Margin = new Thickness(0, 0, 8, 8); gallery.Children.Add(button);
+        }
+        starters.Children.Add(gallery); var presets = new Expander { Header = "从常用布局开始", Content = starters, IsExpanded = librarySnapshot is { Entries.Count: 0 }, Style = (Style)FindResource("ShellExpander"), Margin = new Thickness(0, 12, 0, 0) };
+        AutomationProperties.SetAutomationId(presets, "library-starters"); settings.Children.Add(presets);
+        var files = new StackPanel();
+        var import = ActionButton("导入…", PickImport); AutomationProperties.SetAutomationId(import, "shell-import"); AddRow(files, "导入方案", "载入到草稿，先看图再保存。  Ctrl+O", import);
+        var export = ActionButton("导出…", PickExport); AutomationProperties.SetAutomationId(export, "shell-export"); AddRow(files, "导出当前设置", "包含未保存的参数，方便备份。  Ctrl+Shift+S", export);
+        var restore = LibraryAction("载入上一份", "shell-restore-previous", RestorePreviousDraft); restore.IsEnabled = File.Exists(profilePath + ".previous"); AddRow(files, "找回上次保存", "先载入预览，不直接覆盖当前文件。", restore, true);
+        var backup = new Expander { Header = "导入、导出与找回设置", Content = files, Style = (Style)FindResource("ShellExpander"), Margin = new Thickness(0, 10, 0, 0) }; AutomationProperties.SetAutomationId(backup, "library-backups"); settings.Children.Add(backup);
     }
     void BuildSavedLibrary()
     {
-        Section("本地方案库", "保存多套布局与皮肤组合。载入只进入草稿，归档后仍可恢复。");
-        var group = Group(); var panel = new StackPanel { Margin = new Thickness(16, 12, 16, 8) }; group.Children.Add(panel);
-        var toolbar = new WrapPanel(); panel.Children.Add(toolbar);
-        var archiveFilter = new CheckBox { Content = "查看归档", IsChecked = showArchived, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 8) };
-        AutomationProperties.SetAutomationId(archiveFilter, "library-archived"); toolbar.Children.Add(archiveFilter);
-        archiveFilter.Click += (_, _) => { showArchived = archiveFilter.IsChecked == true; librarySelection = null; SelectPage(4); };
-        var refresh = ActionButton("刷新", () => SelectPage(4)); refresh.Margin = new Thickness(0, 0, 0, 8); AutomationProperties.SetAutomationId(refresh, "library-refresh"); toolbar.Children.Add(refresh);
+        var header = new Grid { Margin = new Thickness(0, 18, 0, 9) }; header.ColumnDefinitions.Add(new()); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        header.Children.Add(Label(showArchived ? "归档方案" : "已保存的方案", 14, true));
+        var toolbar = new StackPanel { Orientation = Orientation.Horizontal }; Grid.SetColumn(toolbar, 1); header.Children.Add(toolbar);
+        var archive = new CheckBox { Content = "查看归档", IsChecked = showArchived, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 14, 0) }; AutomationProperties.SetAutomationId(archive, "library-archived"); toolbar.Children.Add(archive);
+        archive.Click += (_, _) => { showArchived = archive.IsChecked == true; SelectPage(4); };
+        var refresh = LibraryAction("刷新", "library-refresh", () => SelectPage(4)); refresh.Style = (Style)FindResource("ShellQuietButton"); toolbar.Children.Add(refresh); settings.Children.Add(header);
         try { librarySnapshot = library.Read(); }
-        catch (Exception e) { librarySnapshot = null; panel.Children.Add(Label("方案库读取失败，原文件已保留：" + e.Message, 11)); return; }
+        catch (Exception e) { librarySnapshot = null; var error = Label("方案库读取失败，原文件已保留：" + e.Message, 11); error.Margin = new Thickness(12); settings.Children.Add(new Border { Child = error, Background = Brushes.White, CornerRadius = new CornerRadius(8) }); return; }
+        var create = new Grid { Margin = new Thickness(0, 0, 0, 10) }; create.ColumnDefinitions.Add(new()); create.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); create.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+        var name = new TextBox { Text = libraryNameDraft ?? ShellPresets.DisplayName(Draft) + " · " + ShellSkins.All[ShellSkins.Index(Draft)].Name, MaxLength = 40, Padding = new Thickness(10, 7, 10, 7), Margin = new Thickness(0, 0, 8, 0), VerticalContentAlignment = VerticalAlignment.Center, ToolTip = libraryRenameId is null ? "给当前设置起一个名称，保存为一套方案" : "修改这套方案的名称" };
+        AutomationProperties.SetAutomationId(name, "library-name"); AutomationProperties.SetName(name, "方案名称"); name.TextChanged += (_, _) => libraryNameDraft = name.Text; create.Children.Add(name);
+        var requestedRename = focusRenameRequested ? libraryRenameId : null; focusRenameRequested = false;
+        if (requestedRename is not null) name.Loaded += (_, _) => { if (IsVisible && IsActive && page == 4 && libraryRenameId == requestedRename) { name.Focus(); name.SelectAll(); } };
+        var add = LibraryAction(libraryRenameId is null ? "保存为新方案" : "确认重命名", libraryRenameId is null ? "library-add" : "library-confirm-rename", () => { if (libraryRenameId is { } id) { RenameLibraryEntry(id, name.Text); libraryRenameId = null; libraryNameDraft = null; SelectPage(4); } else SaveToLibrary(name.Text); }, true);
+        Grid.SetColumn(add, 1); create.Children.Add(add);
+        if (libraryRenameId is not null) { var cancel = LibraryAction("取消", "library-cancel-rename", () => { libraryRenameId = null; libraryNameDraft = null; SelectPage(4); }); cancel.Margin = new Thickness(8,0,0,0); Grid.SetColumn(cancel, 2); create.Children.Add(cancel); }
+        settings.Children.Add(create);
+        if (libraryLoadUndo is { } prior && Draft == prior.Loaded) { var undoLoad = LibraryAction("撤销这次方案预览", "library-undo-load", UndoLibraryLoad); undoLoad.Style = (Style)FindResource("ShellQuietButton"); undoLoad.Margin = new Thickness(0,0,0,8); settings.Children.Add(undoLoad); }
         var entries = librarySnapshot.Entries.Where(e => e.Archived == showArchived).OrderByDescending(e => e.UpdatedUtc).ToArray();
-        if (!entries.Any(e => e.Id == librarySelection)) librarySelection = entries.FirstOrDefault()?.Id;
-        var selected = entries.FirstOrDefault(e => e.Id == librarySelection);
-        var picker = new ComboBox { ItemsSource = entries.Select(e => e.Name).ToArray(), SelectedIndex = Array.FindIndex(entries, e => e.Id == librarySelection), HorizontalAlignment = HorizontalAlignment.Stretch, Style = (Style)FindResource("ShellChoice"), Margin = new Thickness(0, 0, 0, 10), IsEnabled = entries.Length > 0 };
-        AutomationProperties.SetAutomationId(picker, "library-picker"); AutomationProperties.SetName(picker, "已保存方案"); panel.Children.Add(picker);
-        picker.SelectionChanged += (_, _) => { if (picker.SelectedIndex >= 0) { librarySelection = entries[picker.SelectedIndex].Id; SelectPage(4); } };
-        panel.Children.Add(Label(selected is null ? (showArchived ? "暂无归档方案。" : "还没有保存到方案库，可将当前草稿新增为一套方案。") :
-            $"{ShellPresets.DisplayName(selected.Profile)} · {ShellSkins.All[ShellSkins.Index(selected.Profile)].Name}\n{selected.Profile.IconSize} px 图标 / {selected.Profile.TaskbarHeight} px 高度 · {selected.UpdatedUtc.ToLocalTime():yyyy-MM-dd HH:mm}", 11));
-        var nameLabel = Label("方案名称", 11); nameLabel.Margin = new Thickness(0, 12, 0, 5); panel.Children.Add(nameLabel);
-        var name = new TextBox { Text = selected?.Name ?? ShellPresets.DisplayName(Draft) + " · " + ShellSkins.All[ShellSkins.Index(Draft)].Name, MaxLength = 40, Padding = new Thickness(10, 7, 10, 7), BorderBrush = Brush("#DCE2EC"), BorderThickness = new Thickness(1), Background = Brushes.White, Foreground = Brush("#29313D"), Margin = new Thickness(0, 0, 0, 12) };
-        AutomationProperties.SetAutomationId(name, "library-name"); AutomationProperties.SetName(name, "方案名称"); panel.Children.Add(name);
-        var actions = new WrapPanel(); panel.Children.Add(actions);
-        void Action(string title, string id, System.Action action, bool enabled = true)
-        {
-            var button = ActionButton(title, () => { try { action(); } catch (Exception e) { feedback.Text = "方案库操作未完成：" + e.Message; } });
-            button.IsEnabled = enabled; button.Margin = new Thickness(0, 0, 8, 8); AutomationProperties.SetAutomationId(button, id); actions.Children.Add(button);
+        if (entries.Length == 0) {
+            var empty = new StackPanel { Margin = new Thickness(16, 12, 16, 12) }; empty.Children.Add(Label(showArchived ? "还没有归档方案" : "还没有保存自己的方案", 12, true));
+            var hint = Label(showArchived ? "归档只收起方案，不会删除设置。" : "上方起好名称即可保存；也可以展开下方常用布局，先看效果。", 10); hint.Margin = new Thickness(0,5,0,0); empty.Children.Add(hint);
+            var emptyCard = new Border { Child = empty, Background = Brush("#EFF3FC"), CornerRadius = new CornerRadius(10) }; AutomationProperties.SetAutomationId(emptyCard, "library-empty"); settings.Children.Add(emptyCard); return;
         }
-        Action("新增当前草稿", "library-add", () => SaveToLibrary(name.Text));
-        Action("载入预览", "library-load", () => LoadFromLibrary(selected!.Id), selected is not null && !showArchived);
-        Action("更新为当前草稿", "library-update", () => UpdateLibraryEntry(selected!.Id), selected is not null && !showArchived);
-        Action("复制", "library-copy", () => DuplicateLibraryEntry(selected!.Id), selected is not null);
-        Action("重命名", "library-rename", () => RenameLibraryEntry(selected!.Id, name.Text), selected is not null);
-        Action(showArchived ? "恢复方案" : "归档", "library-archive", () => ArchiveLibraryEntry(selected!.Id, !showArchived), selected is not null);
-        Action("撤销载入", "library-undo-load", UndoLibraryLoad, libraryLoadUndo is { } prior && Draft == prior.Loaded);
+        var cards = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
+        foreach (var entry in entries) {
+            string suffix = entry.Id.ToString("N"); var panel = new StackPanel();
+            var thumbnail = new ShellProfileOverview { Profile = entry.Profile, Thumbnail = true, Height = 112 }; AutomationProperties.SetAutomationId(thumbnail, "library-thumbnail-" + suffix); panel.Children.Add(thumbnail);
+            var words = new Grid { Margin = new Thickness(9,8,9,0) }; words.ColumnDefinitions.Add(new()); words.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var nameLabel = Label(entry.Name, 13, true); nameLabel.TextWrapping = TextWrapping.NoWrap; nameLabel.TextTrimming = TextTrimming.CharacterEllipsis; nameLabel.ToolTip = entry.Name; words.Children.Add(nameLabel);
+            if (entry.Id == librarySelection && entry.Profile == Draft) { var badge = Label("正在预览",10); badge.Foreground = Brush("#657BD1"); badge.Margin = new Thickness(7,0,0,0); Grid.SetColumn(badge,1); words.Children.Add(badge); }
+            panel.Children.Add(words); var meta = Label(ShellSkins.All[ShellSkins.Index(entry.Profile)].Name + " · " + entry.Profile.IconSize + " px", 10); meta.Margin = new Thickness(9,3,9,4); panel.Children.Add(meta);
+            var detail = Label((entry.Profile.ClassicRibbon ? "经典功能区" : entry.Profile.UseClassicNavigationBar ? "经典导航栏" : "现代命令栏") + " · " + (entry.Profile.ClassicContextMenu ? "完整菜单" : "现代菜单"), 10);
+            detail.Foreground = Brush("#71809A"); detail.Margin = new Thickness(9,0,9,7); detail.ToolTip = $"小图标 {entry.Profile.SmallIconSize} px / 小按钮 {entry.Profile.SmallTaskbarButtonWidth} px；" + (entry.Profile.ClassicMenuWithCtrl ? "Ctrl 临时切换开启" : "Ctrl 临时切换关闭"); panel.Children.Add(detail);
+            var actions = new Grid { Margin = new Thickness(9,0,9,9) }; actions.ColumnDefinitions.Add(new()); actions.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
+            var load = LibraryAction(showArchived ? "恢复方案" : "预览此方案", "library-load-" + suffix, () => { if (showArchived) ArchiveLibraryEntry(entry.Id, false); else LoadFromLibrary(entry.Id); }); load.HorizontalAlignment = HorizontalAlignment.Left; actions.Children.Add(load);
+            var more = ActionButton("更多 ▾", () => { }); more.Style = (Style)FindResource("ShellQuietButton"); more.HorizontalAlignment = HorizontalAlignment.Right; AutomationProperties.SetAutomationId(more,"library-more-"+suffix); Grid.SetColumn(more,1); actions.Children.Add(more);
+            var menu = CreateShellMenu(more);
+            void More(string text, string actionId, Action action) { var item = new MenuItem { Header = text, Style = (Style)FindResource("ShellMenuItem") }; AutomationProperties.SetAutomationId(item, actionId + "-" + suffix); item.Click += (_,_) => { try { action(); } catch (Exception e) { feedback.Text = "方案操作未完成：" + e.Message; } }; menu.Items.Add(item); }
+            More("复制这套方案", "library-copy", () => DuplicateLibraryEntry(entry.Id));
+            More("重命名", "library-rename", () => { libraryRenameId = entry.Id; libraryNameDraft = entry.Name; focusRenameRequested = true; SelectPage(4); });
+            if (!showArchived) More("用当前设置更新此方案", "library-update", () => UpdateLibraryEntry(entry.Id));
+            More(showArchived ? "恢复到我的方案" : "归档这套方案", "library-archive", () => ArchiveLibraryEntry(entry.Id, !showArchived));
+            more.Click += (_,_) => menu.IsOpen = true; panel.Children.Add(actions);
+            var card = new Border { Child = panel, Background = Brushes.White, BorderBrush = Brush(entry.Id == librarySelection && entry.Profile == Draft ? "#91A3E2" : "#E0E5F0"), BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(10), ClipToBounds = true, Margin = new Thickness(0,0,10,10) };
+            AutomationProperties.SetAutomationId(card,"library-entry-"+suffix); AutomationProperties.SetName(card,entry.Name); cards.Children.Add(card);
+        }
+        settings.Children.Add(cards);
     }
     public IReadOnlyList<ShellLibraryEntry> LibraryEntries => (librarySnapshot ??= library.Read()).Entries;
     public void SaveToLibrary(string name)
     {
         librarySnapshot = library.Add(librarySnapshot ?? library.Read(), name, Draft);
+        libraryNameDraft = null; libraryRenameId = null;
         librarySelection = librarySnapshot.Entries.Last().Id; showArchived = false; SelectPage(4);
         feedback.Text = "已新增到方案库 · 当前草稿与 Windows 状态不变";
     }
@@ -372,7 +505,8 @@ public sealed class ShellSettingsWindow : Window
     {
         var entry = ShellProfileLibrary.Find(librarySnapshot ??= library.Read(), id);
         if (entry.Archived) throw new InvalidOperationException("请先恢复已归档方案。");
-        libraryLoadUndo = (Draft, entry.Profile); librarySelection = id; Change(entry.Profile); SelectPage(4);
+        if (Draft != entry.Profile) libraryLoadUndo = (Draft, entry.Profile);
+        librarySelection = id; Change(entry.Profile); SelectPage(4);
         feedback.Text = "已载入预览 · 可撤销载入；确认后再保存当前方案";
     }
     public void UndoLibraryLoad()
@@ -469,8 +603,10 @@ public sealed class ShellSettingsWindow : Window
         Resources["AccentBrush"] = Brush(skin.Accent); Resources["SidebarBrush"] = Brush(skin.Sidebar); Resources["WorkspaceBrush"] = Brush(skin.Workspace);
         referenceButton.Content=preview.Before?"返回方案":"原生对比";
         previewCaption.Text = preview.Before ? "Windows 11 参考 · 示意" : page switch { 0 => $"{Draft.IconSize} px 图标  /  {Draft.TaskbarHeight} px 高度", 1 => Draft.ClassicRibbon ? "经典功能区 · 示意" : Draft.UseClassicNavigationBar ? "经典导航栏 · 示意" : "Windows 11 命令栏 · 示意", _ => Draft.ClassicContextMenu ? "完整菜单 · 示意" : "Windows 11 菜单 · 示意" };
+        if (page == 0 && !preview.Before && overviewMode == ShellOverviewMode.SmallIcons) previewCaption.Text = $"小图标 {Draft.SmallIconSize} px / 按钮 {Draft.SmallTaskbarButtonWidth} px / 栏高 {Draft.TaskbarHeight} px";
         if (page == 0 && !preview.Before && (Draft.SkipTaskbarLayout || Draft.SkipTaskbarSizing)) previewCaption.Text = "设计预览 · 部分增强未选择";
         for (int i=0; i<layoutChoices.Count; i++) layoutChoices[i].Tag = i == (Draft.LeftAlignedApps ? 2 : Draft.StartOnLeft ? 0 : 1) ? "selected" : null;
+        SyncOverviews();
     }
     void RefreshPreviewLayout()
     {
@@ -489,7 +625,11 @@ public sealed class ShellSettingsWindow : Window
         previewStage.Height = compactLayout ? 120 : page == 0 ? 176 : 224;
         preview.Height = compactLayout ? 76 : page switch { 0 => 108, 1 => 176, _ => 174 };
         preview.Margin = compactLayout ? new Thickness(10, 32, 10, 8) : new Thickness(14, 45, 14, 12);
+        liveOverview.Height = preview.Height; liveOverview.Margin = preview.Margin;
+        if (currentOverview is not null) currentOverview.Height = compactLayout ? 200 : 360;
     }
+    void Edit(ShellProfile value, ShellOverviewMode mode = ShellOverviewMode.Desktop)
+    { value.Validate(); overviewMode = mode; Change(value); }
     void Change(ShellProfile value)
     { value.Validate(); Draft = value; preview.Options = value.PreviewOptions; SetComparison(false); UpdateDependencies(); UpdateSavedState(); UpdatePreviewDetails(); feedback.Text = Draft != saved ? "草稿已编辑 · 本次未向 Windows 提交更改" : "方案编辑 · 本次未向 Windows 提交更改"; }
     void UpdateSavedState()

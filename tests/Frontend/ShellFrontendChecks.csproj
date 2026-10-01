@@ -11,6 +11,7 @@
     <StartupObject>ClassicDesk.FrontendChecks</StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/ClassicDesk/ShellProfileOverview.cs" Link="ShellProfileOverview.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="../../src/ClassicDesk/ShellLoginResume.cs" Link="ShellLoginResume.cs" />
     <Compile Include="../../src/ClassicDesk/ShellProfileLibrary.cs" Link="ShellProfileLibrary.cs" />

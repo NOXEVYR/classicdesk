@@ -75,7 +75,9 @@ public sealed record ShellPreviewOptions(
     bool ClassicContextMenu = true, bool Mica = true, int TaskbarButtonWidth = 44,
     int SmallIconSize = 16, int SmallTaskbarButtonWidth = 32, bool OtherSystemButtonsOnLeft = true,
     bool StartMenuOnLeft = true, bool SearchMenuOnLeft = false, bool ClassicMenuWithCtrl = true,
-    bool UseClassicNavigationBar = false, bool LeftAlignedApps = false);
+    bool UseClassicNavigationBar = false, bool LeftAlignedApps = false,
+    bool CompactTray = false, bool TranslucentTaskbar = false, bool FollowMaximizedTheme = false,
+    bool SkipTaskbarLayout = false, bool SkipTaskbarSizing = false);
 
 /// <summary>Original vector proposal, never a live shell capture. No handles, OS reads or actions.
 /// Mica is retained only for API compatibility; no material-setting capability is implied.</summary>
@@ -130,7 +132,7 @@ public sealed class ShellPreview : FrameworkElement
         if (width > 0) { formatted.MaxTextWidth = width; formatted.MaxLineCount = 1; formatted.Trimming = TextTrimming.CharacterEllipsis; }
         dc.DrawText(formatted, new(x, y));
     }
-    static void Icon(DrawingContext dc, string kind, double x, double y, double size, string color = Ink)
+    internal static void Icon(DrawingContext dc, string kind, double x, double y, double size, string color = Ink)
     {
         dc.PushTransform(new TranslateTransform(x, y)); dc.PushTransform(new ScaleTransform(size / 24, size / 24));
         switch (kind)

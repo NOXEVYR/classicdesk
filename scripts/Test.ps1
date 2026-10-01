@@ -10,6 +10,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Core checks failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Host checks failed.' }
 & dotnet run --project (Join-Path $repo 'tests/Frontend/ShellFrontendChecks.csproj') -c Release -- (Join-Path $OutputDirectory 'fixtures') (Join-Path $OutputDirectory 'frontend')
 if ($LASTEXITCODE -ne 0) { throw 'Frontend checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/VisualPreview/VisualPreview.csproj') -c Release -- (Join-Path $OutputDirectory 'visual-preview')
+if ($LASTEXITCODE -ne 0) { throw 'Profile visual preview checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/FocusMenu/FocusMenu.csproj') -c Release -- (Join-Path $OutputDirectory 'focus-menu')
+if ($LASTEXITCODE -ne 0) { throw 'Focus and menu offscreen checks failed.' }
 & dotnet run --project (Join-Path $repo 'tests/ReleaseBoundary/ReleaseBoundary.csproj') -c Release -- (Join-Path $OutputDirectory 'release-boundary.json')
 if ($LASTEXITCODE -ne 0) { throw 'Release boundary checks failed.' }
 & dotnet run --project (Join-Path $repo 'tests/ServiceUI/ServiceUI.csproj') -c Release -- (Join-Path $OutputDirectory 'service-ui')
@@ -28,4 +32,16 @@ if ($ServiceBundle) {
     Copy-Item -LiteralPath (Join-Path $installerOutput 'report.json') -Destination (Join-Path $OutputDirectory 'installer.json')
     if ($installerExit -ne 0) { throw 'Isolated installer checks failed.' }
 }
+& dotnet run --project (Join-Path $repo 'tests/UpdatesFeed/UpdatesFeed.csproj') -c Release -- (Join-Path $OutputDirectory 'updates-feed.json')
+if ($LASTEXITCODE -ne 0) { throw 'Frontend update feed checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/UpdatesInstall/UpdatesInstall.csproj') -c Release -- (Join-Path $OutputDirectory 'updates-install')
+if ($LASTEXITCODE -ne 0) { throw 'Frontend update installer checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/UpdatesUI/UpdatesUI.csproj') -c Release -- (Join-Path $OutputDirectory 'updates-ui')
+if ($LASTEXITCODE -ne 0) { throw 'Frontend update UI checks failed.' }
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo 'tests/StartCore/Test.ps1') -ReportDirectory (Join-Path $OutputDirectory 'start-core') -NuGetConfig (Join-Path $repo 'tests/StartCore/NuGet.Config')
+if ($LASTEXITCODE -ne 0) { throw 'ClassicStart isolated core checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/StartUI/StartUI.csproj') -c Release -- (Join-Path $OutputDirectory 'start-ui')
+if ($LASTEXITCODE -ne 0) { throw 'ClassicStart offscreen UI checks failed.' }
+& dotnet run --project (Join-Path $repo 'tests/LayoutDesign/LayoutDesign.csproj') -c Release -- (Join-Path $OutputDirectory 'layout-design')
+if ($LASTEXITCODE -ne 0) { throw 'Layout design offscreen checks failed.' }
 Write-Output "Checks completed. Local reports: $OutputDirectory"

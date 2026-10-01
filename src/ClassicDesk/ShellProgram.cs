@@ -1,4 +1,5 @@
 using System.Windows;
+using System.IO;
 
 namespace ClassicDesk;
 
@@ -7,6 +8,25 @@ public static class ShellProgram
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] is "--classic-start" or "--layout-design")
+        {
+            // Explicit independent tools; no shell discovery, engine activation or key interception.
+            var toolApp = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+            Window tool = args[0] == "--classic-start" ? new ClassicStartMenuWindow() :
+                new LayoutWorkbenchWindow(openStartMenu: parent => new ClassicStartMenuWindow { Owner = parent }.ShowDialog());
+            return toolApp.Run(tool);
+        }
+        if (args.Length == 2 && args[0] is "--apply-frontend-update" or "--recover-frontend-update")
+        {
+            try
+            {
+                var result = args[0] == "--apply-frontend-update" ? FrontendUpdateInstaller.Run(args[1]) : FrontendUpdateInstaller.Recover(args[1]);
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result)); return result.Success || result.State == "RolledBack" ? 0 : 1;
+            }
+            catch (Exception e) { Console.Error.WriteLine("前端更新未完成：" + e.Message); return 1; }
+        }
+        string? updateAcknowledgement = null;
+        if (args.Length == 2 && args[0] == "--frontend-update-ack") { updateAcknowledgement = args[1]; args = []; }
         if (args.Length == 1 && args[0] == "--inspect-taskbar-auto-hide")
         {
             try
@@ -132,6 +152,9 @@ public static class ShellProgram
         using var activate = new EventWaitHandle(false, EventResetMode.AutoReset, "Local\\ClassicDesk.NativeSettings.Activate.v5");
         if (!first) { activate.Set(); return 0; }
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+        FrontendUpdateCoordinator? updater = null;
+        FrontendUpdatePanel? updatePanel = null;
+        string updateInitialization = "更新功能尚未就绪。";
         var window = new ShellSettingsWindow(inspectPlan: profile => Task.Run(() => ShellBackendPlanner.Describe(profile)), manageNative: (owner, profile) =>
         {
             if (ShellServiceStatus.Read().Registered) new ShellServicePanel(profile) { Owner = owner }.ShowDialog();
@@ -143,8 +166,49 @@ public static class ShellProgram
         }, openTaskbarSettings: () =>
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:taskbar") { UseShellExecute = true });
+        }, manageLayouts: owner =>
+        {
+            var workbench = new LayoutWorkbenchWindow(openStartMenu: parent => new ClassicStartMenuWindow { Owner = parent }.ShowDialog()) { Owner = owner };
+            workbench.ShowDialog();
+        }, manageUpdates: owner =>
+        {
+            if (updater is null) { MessageBox.Show(owner, updateInitialization, "ClassicDesk"); return; }
+            updatePanel = new FrontendUpdatePanel(updater) { Owner = owner };
+            try { updatePanel.ShowDialog(); } finally { updatePanel = null; }
         });
         app.MainWindow = window;
+        window.Loaded += (_, _) =>
+        {
+            // Readiness acknowledgement is deliberately after the real frontend has loaded.
+            if (updateAcknowledgement is not null)
+            {
+                try { FrontendUpdateInstaller.Acknowledge(updateAcknowledgement); }
+                catch (Exception e) { MessageBox.Show(window, "更新启动确认失败，保留事务待核对：" + e.Message, "ClassicDesk"); }
+                updateAcknowledgement = null;
+            }
+            if (updater is not null) return;
+            try
+            {
+                var appRoot = System.IO.Path.GetFullPath(AppContext.BaseDirectory).TrimEnd(System.IO.Path.DirectorySeparatorChar);
+                var key = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(appRoot.ToUpperInvariant())))[..24];
+                var cacheRoot = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassicDesk", "FrontendUpdates", key);
+                updater = new FrontendUpdateCoordinator(appRoot, cacheRoot, FrontendUpdateCoordinator.CurrentVersion,
+                    () => window.UpdateBlockReason, stage =>
+                    {
+                        if (window.UpdateBlockReason is { } reason) throw new InvalidOperationException(reason);
+                        var parent = FrontendUpdateInstaller.CurrentProcessIdentity();
+                        var prepared = FrontendUpdateInstaller.Prepare(appRoot, stage, System.IO.Path.Combine(cacheRoot, "transactions"), parent);
+                        var info = new System.Diagnostics.ProcessStartInfo(prepared.HelperExecutablePath)
+                        { UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = System.IO.Path.GetDirectoryName(prepared.HelperExecutablePath)! };
+                        info.ArgumentList.Add("--apply-frontend-update"); info.ArgumentList.Add(prepared.RequestPath);
+                        using var helper = System.Diagnostics.Process.Start(info) ?? throw new IOException("无法启动前端更新安装器。");
+                        updatePanel?.Close();
+                        if (!window.TryCloseForUpdate()) throw new InvalidOperationException("设置窗口未退出，安装器将超时停止，不会强行关闭程序。");
+                    });
+                updater.StartAfterWindowReady();
+            }
+            catch (Exception e) { updateInitialization = "软件更新未就绪，设置仍可继续使用：" + e.Message; }
+        };
         app.DispatcherUnhandledException += (_, e) => { MessageBox.Show(window, e.Exception.Message, "ClassicDesk · 操作未完成"); e.Handled = true; };
         var closed = false; window.Closed += (_, _) => closed = true;
         var wait = ThreadPool.RegisterWaitForSingleObject(activate, (_, _) =>
@@ -154,7 +218,7 @@ public static class ShellProgram
             catch (InvalidOperationException) when (app.Dispatcher.HasShutdownStarted) { }
         }, null, -1, false);
         try { return app.Run(window); }
-        finally { wait.Unregister(null); }
+        finally { wait.Unregister(null); updater?.Dispose(); }
     }
     static ShellNativeController LoginController(ShellLoginRegistration login) => new(
         System.IO.Path.GetFullPath(System.IO.Path.Combine(AppContext.BaseDirectory, "..", "原生组件-未启用")),
