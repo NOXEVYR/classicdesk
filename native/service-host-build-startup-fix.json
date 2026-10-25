@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "moduleVersion": "1.3.2-classicdesk.1",
+  "engineVersion": "1.7.3",
+  "toolchain": "windhawk-compiler-1.6",
+  "upstreamCommit": "f3ec3675168600d1decfcda97d2a12e375903ae9",
+  "upstreamSourceSha256": "273c6da6abfc035d86e297c2abf6b98cd53a9f25b3862a6b0da5490e434ff02b",
+  "hostSha256": "d08ee9e4b2d9e3f92a704feee20e63bac57deaaee6e2a6fb3351427c46ba9650",
+  "moduleSha256": "e3f6ef523414f4895cf8b6cca1ea374c71fee8aab1d78d4cb3f29f0052412393",
+  "sources": [
+    {
+      "path": "native/taskbar-start-button-position.wh.cpp",
+      "sha256": "ce0a69a4dac16c6a8f35871ef4c17302d1bef21605bd612c595444ec8aaacb67"
+    },
+    {
+      "path": "native/start-menu-ready.h",
+      "sha256": "07e0c75008c0ccf895d0d8454ee8fdaba071309d88bb0a7be7c1c188360b835b"
+    },
+    {
+      "path": "native/start-menu-ready-tests.cpp",
+      "sha256": "474b3b6540dbbed0546d5249beb88253561d30482475a514e8260c47ca2f826a"
+    },
+    {
+      "path": "native/Build-StartPosition.ps1",
+      "sha256": "ee96b93db497eedef9cd59e86d38cf5781f843dcaa8781d18d59d13c4d9abad5"
+    },
+    {
+      "path": "native/Build-Service.ps1",
+      "sha256": "99a47996ddfe102026be7f8fd0fb9edb472780d87e580af7b20b2216e40a674a"
+    },
+    {
+      "path": "native/shell-service.cpp",
+      "sha256": "107e9e740e283b8bd5b0194b13a4093570677d499fef715a1747e3699cf12572"
+    },
+    {
+      "path": "native/service-session.h",
+      "sha256": "74652d787f2cbe8045880e3108f1e9323ed18852704e57bb16e14fdf9c9d0600"
+    },
+    {
+      "path": "scripts/Repair-ShellService.ps1",
+      "sha256": "92d179f58e1796b46a6884272420a74adc0fcd220f6daa0c5acffbdc4f93101e"
+    },
+    {
+      "path": "scripts/Install-ShellService.ps1",
+      "sha256": "b51062ff685821424aca2d4b36777454bb985abb424850f0da3c7788f6924db0"
+    },
+    {
+      "path": "runtime/windows-x64-assets-startup-fix.json",
+      "sha256": "12ca9cd52ea5d64fed8136253ceb0bdb9c7fec8d51d95388c83f408f4bd41f9f"
+    }
+  ]
+}

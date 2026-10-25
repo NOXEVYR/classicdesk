@@ -100,10 +100,10 @@ public static class ShellBackendPlanner
                 version.Contains("classicdesk") ? "" : $"https://mods.windhawk.net/mods/{id}/{version}_64.dll");
         var modules = new[]
         {
-            Mod("taskbar-start-button-position", "1.3.2", "GPL-3.0", !profile.SkipTaskbarLayout && profile.StartOnLeft && !profile.LeftAlignedApps,
+            Mod("taskbar-start-button-position", "1.3.2-classicdesk.1", "GPL-3.0", !profile.SkipTaskbarLayout && profile.StartOnLeft && !profile.LeftAlignedApps,
                 ["explorer.exe", "StartMenuExperienceHost.exe"], Settings(("otherSystemButtonsOnTheLeft", profile.OtherSystemButtonsOnLeft ? "1" : "0"),
                     ("startMenuOnTheLeft", profile.StartMenuOnLeft ? "1" : "0"), ("searchMenuPositionInAllCases", profile.SearchMenuOnLeft ? "1" : "0"))),
-            Mod("taskbar-icon-size", "1.3.10", "GPL-3.0", !profile.SkipTaskbarSizing, ["explorer.exe"],
+            Mod("taskbar-icon-size", "1.3.10", "GPL-3.0", !profile.SkipTaskbarSizing && !profile.UseNativeTaskbarSizing, ["explorer.exe"],
                 Settings(("TaskbarHeight", Number(profile.TaskbarHeight)), ("IconSize", Number(profile.IconSize)),
                     ("IconSizeSmall", Number(profile.SmallIconSize)), ("TaskbarButtonWidth", Number(profile.TaskbarButtonWidth)), ("TaskbarButtonWidthSmall", Number(profile.SmallTaskbarButtonWidth)))),
             Mod("explorer-frame-classic", "1.0.8", "GPL-3.0", profile.ClassicRibbon || profile.UseClassicNavigationBar, ["explorer.exe"],

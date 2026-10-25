@@ -335,6 +335,37 @@ internal static class FrontendChecks
             Click(Logical<Button>(window).Single(b => AutomationProperties.GetAutomationId(b) == "shell-reset-page"));
             Require(!window.Draft.SkipTaskbarLayout && !window.Draft.SkipTaskbarSizing, "重置本页没有恢复开关。");
         });
+        Check("Windows 原生尺寸跨页保存且切回不丢自定义值", () =>
+        {
+            var file = Path.Combine(run, "native-sizing.json"); var window = New(file);
+            Choice(window, "图标大小").SelectedItem = "32 px";
+            ComboBox Owner() => Logical<ComboBox>(window).Single(c => AutomationProperties.GetAutomationId(c) == "shell-sizing-owner");
+            Owner().SelectedIndex = 0; Pump();
+            Require(window.Draft.UseNativeTaskbarSizing && window.Draft.IconSize == 32 && !Choice(window, "图标大小").IsEnabled, "原生选择丢值或仍允许同时调整。");
+            window.SelectPage(1); window.SelectPage(0); window.SaveDraft();
+            Require(ShellProfileFile.Import(file) == window.Draft && Owner().SelectedIndex == 0, "原生选择未持久化。");
+            var panel = new ShellNativePanel(window.Draft, new TaskbarReviewProbe()); Windows.Add(panel);
+            Require(!panel.Selection.Sizing && !Logical<CheckBox>(panel).Single(c => AutomationProperties.GetAutomationId(c) == "native-feature-sizing").IsEnabled, "应用面板重新启用了尺寸增强。");
+            Owner().SelectedIndex = 1; Pump();
+            Require(!window.Draft.UseNativeTaskbarSizing && window.Draft.IconSize == 32 && Choice(window, "图标大小").IsEnabled, "切回自定义未恢复原参数。");
+        });
+        Check("原生尺寸方案不会因勾选增强重新启用尺寸模块", () =>
+        {
+            var draft = new ShellProfile(IconSize: 32, UseNativeTaskbarSizing: true, TranslucentTaskbar: true);
+            var effective = new ShellFeatureSelection(true, true, true, true).Apply(draft);
+            var env = new ShellBackendEnvironment(DateTime.UtcNow, "X64", 26300, 9711, "26H2", [], [], [], [], "not-detected", [], 1);
+            var modules = ShellBackendPlanner.CreatePlan(effective, env).Modules;
+            var size = modules.Single(m => m.Id == "taskbar-icon-size");
+            Require(!size.Selected && ShellBackendConfig.BuildModIni(size, enabled: size.Selected).Contains("Disabled=1\r\n"), "生成配置仍然启用了尺寸模块。");
+            Require(modules.Single(m => m.Id == "explorer-frame-classic").Selected && modules.Single(m => m.Id == "windows-11-taskbar-styler").Selected, "原生尺寸误关其他功能。");
+            Require(effective.UseNativeTaskbarSizing && effective.IconSize == 32 && effective.PreviewOptions.SkipTaskbarSizing, "投影或预览冒充自定义尺寸已应用。");
+            Require(ShellPresets.Changes(draft with { UseNativeTaskbarSizing = false }, draft).SequenceEqual(new[] { "尺寸由 Windows 管理" }), "变更摘要遗漏尺寸归属。");
+        });
+        Check("旧方案序列化保持原样，原生尺寸需要显式选择", () =>
+        {
+            var json = JsonSerializer.Serialize(new ShellProfile());
+            Require(!json.Contains("UseNativeTaskbarSizing") && !JsonSerializer.Deserialize<ShellProfile>(json)!.UseNativeTaskbarSizing, "旧方案指纹被默认字段改变。");
+        });
         Check("草稿状态计数随编辑保存撤销更新，查看更改不触发系统检查", () =>
         {
             var file = Path.Combine(run, "draft-summary.json"); int calls = InspectCalls; var window = New(file);

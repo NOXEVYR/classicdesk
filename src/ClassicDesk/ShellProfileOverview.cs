@@ -20,7 +20,7 @@ public sealed class ShellProfileOverview : FrameworkElement
     public bool Thumbnail { get => (bool)GetValue(ThumbnailProperty); set => SetValue(ThumbnailProperty, value); }
 
     bool Layout => !Profile.SkipTaskbarLayout;
-    bool Sizing => !Profile.SkipTaskbarSizing;
+    bool Sizing => !Profile.SkipTaskbarSizing && !Profile.UseNativeTaskbarSizing;
     bool AllLeft => Layout && Profile.LeftAlignedApps;
     bool StartLeft => Layout && (Profile.StartOnLeft || Profile.LeftAlignedApps);
     bool OtherLeft => AllLeft || (StartLeft && Profile.OtherSystemButtonsOnLeft);

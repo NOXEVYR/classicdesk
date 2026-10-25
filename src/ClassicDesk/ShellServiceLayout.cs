@@ -93,14 +93,18 @@ public static class ShellServiceLayout
         var environment = new ShellBackendEnvironment(DateTime.UtcNow, "X64", null, null, null, [], [], [], [], "unknown", []);
         foreach (var mod in ShellBackendPlanner.CreatePlan(review.Proposal, environment, runtime).Modules)
             File.WriteAllText(Path.Combine(runtime, "AppData", "Engine", "Mods", mod.Id + ".ini"),
-                ShellBackendConfig.BuildModIni(mod, mod.Selected, DateTimeOffset.UnixEpoch), new UnicodeEncoding(false, true));
+                ShellBackendConfig.BuildModIni(mod, mod.Selected, DateTimeOffset.UnixEpoch, ShellBackendConfig.RuntimeLibraryFileName(runtime, mod)), new UnicodeEncoding(false, true));
         var files = Directory.EnumerateFiles(destination, "*", SearchOption.AllDirectories).Order(StringComparer.Ordinal)
             .Select(p => new ShellServiceFile(Path.GetRelativePath(destination, p).Replace('\\', '/'), new FileInfo(p).Length, Hash(p))).ToArray();
         var bundle = new ShellServiceBundle(1, "prepared-not-installed", ShellServicePackage.ServiceName,
             receipt.GetProperty("OwnerSid").GetString()!, receipt.GetProperty("Source").Deserialize<ColdUpgradeSource>()!,
             ShellNativeController.ReviewedRuntimeManifest, ShellServicePackage.ReviewedHostSha256, ShellServicePackage.EngineInclude,
             files, review.Proposal, new(review.Installation, review.ReceiptSha256));
-        File.WriteAllText(Path.Combine(destination, "service-package.json"), JsonSerializer.Serialize(bundle, Json), new UTF8Encoding(false));
+        // Preserve the exact recovery source schema from the receipt. New profile
+        // properties must not rewrite a legacy Source during a layout update.
+        var metadata = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(bundle, Json))!;
+        metadata["Source"] = System.Text.Json.Nodes.JsonNode.Parse(receipt.GetProperty("Source").GetRawText());
+        File.WriteAllText(Path.Combine(destination, "service-package.json"), metadata.ToJsonString(Json), new UTF8Encoding(false));
         if (Hash(receiptPath) != review.ReceiptSha256) throw new IOException("准备期间方案被更改，请重新检查。");
         return ShellServicePackage.Verify(destination);
     }
@@ -117,8 +121,9 @@ public static class ShellServiceLayout
             using var alignment = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced");
             ValidateTaskbarAlignment(review.Proposal, alignment?.GetValue("TaskbarAl") as int?);
         }
-        if (ShellServiceStatus.Read() is not { State: 4, StartMode: 2 })
-            throw new InvalidOperationException("请先恢复开机组件的自动运行，再更新开机方案。");
+        var service = ShellServiceStatus.Read();
+        if (service is not ({ State: 4, StartMode: 2 } or { State: 1, StartMode: 4 }))
+            throw new InvalidOperationException("开机组件正在切换状态，请稍后重新检查。已停用的组件可以直接修订方案，无需先恢复增强。");
         var parent = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ClassicDesk", "ServiceUpdates");
         Directory.CreateDirectory(parent);
         var folder = Path.Combine(parent, Guid.NewGuid().ToString("N"));
@@ -128,7 +133,14 @@ public static class ShellServiceLayout
         var after = await ReviewAsync(review.Proposal);
         if (after.Installation == current.Installation || after.ScheduledProfile != review.Proposal || !after.Pending)
             throw new IOException("尚未确认更新结果，请重新检查开机状态。");
-        return "开机方案已更新，下次重启 Windows 后自动生效。当前桌面保持原布局；旧安装与恢复记录已保留。";
+        if (after.ScheduledProfile.ClassicRibbon)
+        {
+            try { ExplorerPrelaunchController.Current().EnsureRibbon(); }
+            catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException or JsonException)
+            { return "开机方案已经保存，但 Win10 窗口预加载准备未完成；自动加载尚未启用。请检查原生预加载恢复记录。" + e.Message; }
+        }
+        return service.StartMode == 4 ? "开机方案已更新，自动加载继续停用。完成当前系统的增强兼容验收后才能启用，当前桌面保持原布局。" :
+            "开机方案已更新，新的方案须重新通过兼容验收后才能自动加载。当前桌面保持原布局；旧安装与恢复记录已保留。";
     }
     public static async Task DisableAsync(ShellServiceLayoutReview review)
     {

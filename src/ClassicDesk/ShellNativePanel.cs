@@ -48,7 +48,7 @@ public sealed class ShellNativePanel : Window
     public ShellNativePanel(ShellProfile proposal, IShellNativeController operations)
     {
         proposal.Validate(); profile = proposal; controller = operations;
-        Selection = new(Layout: !profile.SkipTaskbarLayout, Sizing: !profile.SkipTaskbarSizing);
+        Selection = new(Layout: !profile.SkipTaskbarLayout, Sizing: !profile.SkipTaskbarSizing && !profile.UseNativeTaskbarSizing);
         Title = "ClassicDesk · 启用与恢复"; Width = 660; Height = 650; MinWidth = 520; MinHeight = 460;
         Background = Color("#F6F7F9"); Foreground = Color("#20232A");
         FontFamily = new FontFamily("Microsoft YaHei UI"); FontSize = 12; Icon = AppIcons.Get("brand");
@@ -64,14 +64,14 @@ public sealed class ShellNativePanel : Window
         var body = new StackPanel { Margin = new Thickness(24, 0, 24, 12) }; var scroll = new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; Grid.SetRow(scroll, 2); root.Children.Add(scroll);
         var summary = new StackPanel { Margin = new Thickness(14, 8, 14, 8) };
         FeatureRow(summary, "任务栏布局", ShellPresets.TaskbarLayoutName(profile) + "；同时控制紧凑托盘与透明策略（动态背景仅主屏）。", "layout", Selection.Layout, value => Selection with { Layout = value });
-        FeatureRow(summary, "图标与尺寸", $"图标 {profile.IconSize} · 栏高 {profile.TaskbarHeight} · 按钮宽 {profile.TaskbarButtonWidth} px", "sizing", Selection.Sizing, value => Selection with { Sizing = value });
+        FeatureRow(summary, "图标与尺寸", profile.UseNativeTaskbarSizing ? "由 Windows 原生设置管理，保留自定义尺寸参数" : $"图标 {profile.IconSize} · 栏高 {profile.TaskbarHeight} · 按钮宽 {profile.TaskbarButtonWidth} px", "sizing", Selection.Sizing, value => Selection with { Sizing = value }, available: !profile.UseNativeTaskbarSizing);
         FeatureRow(summary, "资源管理器", profile.ClassicRibbon ? "Windows 10 功能区 · 不保留标签页" : profile.UseClassicNavigationBar ? "经典导航栏 · 保留标签页" : "Windows 11 原生样式 · 无需增强", "explorer", false, value => Selection with { Explorer = value }, profile.ClassicRibbon || profile.UseClassicNavigationBar);
         FeatureRow(summary, "右键菜单", profile.ClassicContextMenu ? "完整菜单" + (profile.ClassicMenuWithCtrl ? " · 按 Ctrl 临时使用新版" : "") : "Windows 11 原生菜单 · 无需增强", "menu", false, value => Selection with { ContextMenu = value }, profile.ClassicContextMenu);
         selectionSummary.Margin = new Thickness(2, 12, 2, 4); selectionSummary.Foreground = Color("#66758A"); UpdateSelectionSummary(); summary.Children.Add(selectionSummary);
         body.Children.Add(new Border { Background = Brushes.White, CornerRadius = new CornerRadius(9), BorderBrush = Color("#E1E6EE"), BorderThickness = new Thickness(1), Child = summary });
         var statusBox = new StackPanel { Margin = new Thickness(2, 20, 2, 0) }; state.FontSize = 15; statusBox.Children.Add(state); detail.Margin = new Thickness(0, 7, 0, 0); detail.Foreground = Color("#656C77"); detail.LineHeight = 20; statusBox.Children.Add(detail); body.Children.Add(statusBox);
         AutomationProperties.SetLiveSetting(state, AutomationLiveSetting.Polite);
-        var note = Text("增强效果需要后台引擎运行，设置窗口可以退出。资源管理器样式请在新开的窗口中检查。", 11); note.Foreground = Color("#8A7351"); note.LineHeight = 18; note.Margin = new Thickness(2, 17, 2, 8); body.Children.Add(note);
+        var note = Text("增强效果需要后台引擎运行，设置窗口可以退出。已有文件窗口不会随模块切换自动重建；新窗口的 Win10 功能区、拖动和顶部点击均需检查。", 11); note.Foreground = Color("#8A7351"); note.LineHeight = 18; note.Margin = new Thickness(2, 17, 2, 8); body.Children.Add(note);
         if (controller.SupportsLoginResume)
         {
             loginChoice = new CheckBox { Content = "登录后保持上次已应用的增强", Margin = new Thickness(2, 8, 2, 8), IsEnabled = false };
@@ -140,7 +140,7 @@ public sealed class ShellNativePanel : Window
             review = null;
             state.Text = result.Error is not null ? "操作未完成，请重新检查" : result.State switch { ShellActivationState.Active => "增强引擎已启动", ShellActivationState.Restored => "原设置已恢复", ShellActivationState.RolledBack => "切换未完成，已回退", _ => "需要检查恢复记录" };
             detail.Text = result.State switch {
-                ShellActivationState.Active => result.Error ?? "所选功能的配置与进程已回读，实际效果仍需确认。资源管理器样式请在新开的窗口中检查。需要恢复或切换组合时，请先点击“重新检查”，再按新的检查结果恢复本次设置。",
+                ShellActivationState.Active => result.Error ?? "所选功能的配置与进程已回读，实际效果仍需确认。已有文件窗口尚未重建；新窗口的布局、拖动与顶部点击须分别检查。需要恢复或切换组合时，请先点击“重新检查”，再按新的检查结果恢复本次设置。",
                 ShellActivationState.Restored => "已恢复本次事务拥有的原始设置，并确认自己的引擎退出。请检查实际桌面。",
                 _ => result.Error ?? "已保留记录，未把不确定状态当作成功。" };
             detail.Text += "\n记录：" + result.JournalId.ToString("N");

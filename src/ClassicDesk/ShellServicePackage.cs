@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -20,7 +20,7 @@ public sealed record ShellServiceBundle(int SchemaVersion, string State, string 
 public static class ShellServicePackage
 {
     public const string ServiceName = "ClassicDeskShell";
-    public const string ReviewedHostSha256 = "14603CC429E3A109AAD6133E163131DCEC890F2F8F7D614554B435CE2468A67D";
+    public const string ReviewedHostSha256 = "62EA4A48A3D1F44D09CBD62F2E9FD796B96DEFDBA87AC3346C40BD5696D8EEB3";
     public const string EngineInclude = @"%SystemRoot%\System32\winlogon.exe|%SystemRoot%\System32\userinit.exe|%SystemRoot%\explorer.exe|%SystemRoot%\SystemApps\Microsoft.Windows.StartMenuExperienceHost_cw5n1h2txyewy\StartMenuExperienceHost.exe";
     static readonly Encoding Ini = new UnicodeEncoding(false, true);
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
@@ -55,7 +55,7 @@ public static class ShellServicePackage
         var environment = new ShellBackendEnvironment(DateTime.UtcNow, "X64", null, null, null, [], [], [], [], "unknown", []);
         var plan = ShellBackendPlanner.CreatePlan(source.AppliedProfile, environment, runtime);
         foreach (var mod in plan.Modules)
-            File.WriteAllText(Path.Combine(runtime, "AppData", "Engine", "Mods", mod.Id + ".ini"), ShellBackendConfig.BuildModIni(mod, mod.Selected, DateTimeOffset.UnixEpoch), Ini);
+            File.WriteAllText(Path.Combine(runtime, "AppData", "Engine", "Mods", mod.Id + ".ini"), ShellBackendConfig.BuildModIni(mod, mod.Selected, DateTimeOffset.UnixEpoch, ShellBackendConfig.RuntimeLibraryFileName(runtime, mod)), Ini);
         File.WriteAllText(Path.Combine(runtime, "AppData", "Engine", "settings.ini"),
             "[Settings]\r\nSafeMode=0\r\nInclude=" + EngineInclude + "\r\nExclude=*\r\nInjectIntoCriticalProcesses=0\r\nInjectIntoGames=0\r\nInjectIntoIncompatiblePrograms=0\r\n", Ini);
         // Warm caches contain only PDBs and module cache INIs. No process status,
@@ -121,7 +121,7 @@ public static class ShellServicePackage
         var environment = new ShellBackendEnvironment(DateTime.UtcNow, "X64", null, null, null, [], [], [], [], "unknown", []);
         var modules = ShellBackendPlanner.CreatePlan(profile, environment, runtime).Modules;
         var expected = modules.ToDictionary(m => "AppData/Engine/Mods/" + m.Id + ".ini",
-            m => ShellBackendConfig.BuildModIni(m, m.Selected, DateTimeOffset.UnixEpoch));
+            m => ShellBackendConfig.BuildModIni(m, m.Selected, DateTimeOffset.UnixEpoch, ShellBackendConfig.RuntimeLibraryFileName(runtime, m)));
         expected["Engine/1.7.3/engine.ini"] = "[Storage]\r\nPortable=1\r\nAppDataPath=..\\..\\AppData\\Engine\r\n";
         expected["AppData/Engine/settings.ini"] = "[Settings]\r\nSafeMode=0\r\nInclude=" + EngineInclude + "\r\nExclude=*\r\nInjectIntoCriticalProcesses=0\r\nInjectIntoGames=0\r\nInjectIntoIncompatiblePrograms=0\r\n";
         foreach (var item in expected)

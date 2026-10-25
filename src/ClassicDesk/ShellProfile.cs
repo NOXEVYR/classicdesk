@@ -18,7 +18,10 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
     // Keep the persisted key for existing profile/journal fingerprints; the new native
     // runtime uses it for opaque maximized/full-screen apps; normal windows stay clear.
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool FollowMaximizedTheme = false,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool LeftAlignedApps = false)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool LeftAlignedApps = false,
+    // Explicit ownership; preserve custom dimensions for switching back. False keeps
+    // existing profile and transaction fingerprints byte-compatible.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool UseNativeTaskbarSizing = false)
 {
     public static readonly int[] IconSizes = [16, 20, 24, 28, 32];
     public static readonly int[] TaskbarHeights = [40, 44, 48, 52, 56, 64];
@@ -44,7 +47,7 @@ public sealed record ShellProfile(bool StartOnLeft = true, int IconSize = 24, in
         StartMenuOnLeft: StartMenuOnLeft, SearchMenuOnLeft: SearchMenuOnLeft,
         ClassicMenuWithCtrl: ClassicMenuWithCtrl, UseClassicNavigationBar: UseClassicNavigationBar, LeftAlignedApps: LeftAlignedApps,
         CompactTray: CompactTray, TranslucentTaskbar: TranslucentTaskbar, FollowMaximizedTheme: FollowMaximizedTheme,
-        SkipTaskbarLayout: SkipTaskbarLayout, SkipTaskbarSizing: SkipTaskbarSizing);
+        SkipTaskbarLayout: SkipTaskbarLayout, SkipTaskbarSizing: SkipTaskbarSizing || UseNativeTaskbarSizing);
 }
 
 /// <summary>Per-review choices; projecting a draft never changes its saved values.</summary>
@@ -74,8 +77,8 @@ public static class ShellPresets
     public static string TaskbarLayoutName(ShellProfile profile) => profile.LeftAlignedApps ? "开始与应用全靠左" : profile.StartOnLeft ? "开始靠左 · 应用居中" : "开始与应用居中";
     public static IReadOnlyList<string> Changes(ShellProfile before, ShellProfile after)
     {
-        var names = new[] { "开始按钮位置", "图标大小", "任务栏高度", "功能区", "完整右键菜单", "按钮宽度", "小图标尺寸", "小按钮宽度", "系统按钮位置", "开始菜单位置", "搜索菜单位置", "Ctrl 菜单切换", "经典导航栏", "布局方案", "界面皮肤", "任务栏布局增强", "任务栏尺寸增强", "紧凑系统托盘", "透明任务栏", "最大化或全屏时不透明", "应用全靠左" };
-        var properties = new[] { "StartOnLeft", "IconSize", "TaskbarHeight", "ClassicRibbon", "ClassicContextMenu", "TaskbarButtonWidth", "SmallIconSize", "SmallTaskbarButtonWidth", "OtherSystemButtonsOnLeft", "StartMenuOnLeft", "SearchMenuOnLeft", "ClassicMenuWithCtrl", "UseClassicNavigationBar", "Appearance", "Skin", "SkipTaskbarLayout", "SkipTaskbarSizing", "CompactTray", "TranslucentTaskbar", "FollowMaximizedTheme", "LeftAlignedApps" };
+        var names = new[] { "开始按钮位置", "图标大小", "任务栏高度", "功能区", "完整右键菜单", "按钮宽度", "小图标尺寸", "小按钮宽度", "系统按钮位置", "开始菜单位置", "搜索菜单位置", "Ctrl 菜单切换", "经典导航栏", "布局方案", "界面皮肤", "任务栏布局增强", "任务栏尺寸增强", "紧凑系统托盘", "透明任务栏", "最大化或全屏时不透明", "应用全靠左", "尺寸由 Windows 管理" };
+        var properties = new[] { "StartOnLeft", "IconSize", "TaskbarHeight", "ClassicRibbon", "ClassicContextMenu", "TaskbarButtonWidth", "SmallIconSize", "SmallTaskbarButtonWidth", "OtherSystemButtonsOnLeft", "StartMenuOnLeft", "SearchMenuOnLeft", "ClassicMenuWithCtrl", "UseClassicNavigationBar", "Appearance", "Skin", "SkipTaskbarLayout", "SkipTaskbarSizing", "CompactTray", "TranslucentTaskbar", "FollowMaximizedTheme", "LeftAlignedApps", "UseNativeTaskbarSizing" };
         return properties.Select((name, i) => (Property: typeof(ShellProfile).GetProperty(name)!, Label: names[i]))
             .Where(item => !Equals(item.Property.GetValue(before), item.Property.GetValue(after))).Select(item => item.Label).ToArray();
     }

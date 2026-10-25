@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace ClassicDesk;
 
-public sealed record ShellServiceObservation(bool Registered, int StartMode, uint State, string ImagePath, bool UpdatePending = false);
+public sealed record ShellServiceObservation(bool Registered, int StartMode, uint State, string ImagePath, bool UpdatePending = false, string? StartupProtection = null);
 
 /// <summary>Read-only SCM observation, no process or registry mutations.</summary>
 public static class ShellServiceStatus
@@ -32,7 +32,24 @@ public static class ShellServiceStatus
             finally { CloseServiceHandle(manager); }
         }
         var image = key.GetValue("ImagePath") as string ?? "";
-        return new(true, key.GetValue("Start") is int start ? start : 0, state, image, PendingUpdate(image));
+        return new(true, key.GetValue("Start") is int start ? start : 0, state, image, PendingUpdate(image), ReadStartupProtection(image, state));
+    }
+    static string? ReadStartupProtection(string image, uint serviceState)
+    {
+        if (serviceState == 4) return null;
+        var match = System.Text.RegularExpressions.Regex.Match(image, "^\"([^\"]+\\\\ClassicDeskShell\\.exe)\" --service$");
+        if (!match.Success) return null;
+        var root = Path.GetDirectoryName(Path.GetFullPath(match.Groups[1].Value))!;
+        var prefix = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ClassicDesk", "ShellService") + Path.DirectorySeparatorChar;
+        if (!root.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || root[prefix.Length..].Contains(Path.DirectorySeparatorChar)) return null;
+        var path = Path.Combine(root, "service-state.ini");
+        if (!File.Exists(path)) return null;
+        WindowsShellActivationHost.RejectReparse(path);
+        var bytes = WindowsShellActivationHost.ReadBounded(path, 32 * 1024);
+        using var reader = new StreamReader(new MemoryStream(bytes), System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var text = reader.ReadToEnd();
+        var state = text.Split('\n').Select(x => x.Trim()).FirstOrDefault(x => x.StartsWith("State=", StringComparison.Ordinal));
+        return state is "State=compatibility-unverified" or "State=compatibility-changed" or "State=compatibility-unavailable" or "State=cold-diagnostic-expired" ? state[6..] : null;
     }
     static bool PendingUpdate(string image)
     {

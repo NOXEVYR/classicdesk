@@ -77,3 +77,17 @@
 更新只替换 SCM 下次启动路径，当前服务和外壳保持运行。回执用 `TargetProfile` 保存新方案，原始 `Source` 恢复依据保持不变；可以在重启前再次更新待生效方案。新界面提供下次开机停用，独立的 `Disable-ClassicDesk-NextBoot.vbs` 按当前受保护安装停用，不固定某个旧版本目录。
 
 本轮仅替换设置前端；本机运行的服务和原生模块仍为 0.11.14。配置更新流程通过隔离文件与模拟 SCM 检查，真实安装的只读检查已通过；尚未把不同布局写入本机服务，也未验证这种布局更新后的重启结果。
+
+### 本次会话恢复（2026-10-15）
+
+开机增强保持停用时，可从 ClassicDesk 的“开机方案”页选择“本次启用已保存方案”，或用 `ClassicDesk.exe --start-shell-session` 执行同一入口。操作需要管理员授权，只对当前登录会话启动；它不会启用下次开机，也不会把当前草稿保存到安装目录。当前草稿与登记方案不同时，本次明确使用安装回执中的已保存方案。
+
+启动前会复核服务为 `Stopped` 且 `Disabled`、安装回执归属于当前用户、没有待处理更新、当前任务栏结构及响应检查通过，并确认主任务栏、`GetShellWindow` 与 Explorer 的 PID/会话身份一致。原生只读检查提供 fingerprint 供本次操作绑定；启动侧还会重新核对 Explorer 创建时间和 fingerprint。任一检查未知或身份变化都会阻止启动。启动后要求 SCM 和原生状态回读确认同一安装、同一进程 PID、服务运行而启动类型仍为 `Disabled`。
+
+当前会话状态 `running-current-session-unverified` 只表明引擎已在本次会话启动，安装脚本承诺不写入开机兼容验收凭据。它不是冷启动授权，也不证明任务栏已正确渲染或可正常点击；仍需检查桌面效果。Explorer 退出时，本次会话引擎会停止。
+
+```powershell
+& '.\app\ClassicDesk.exe' --start-shell-session
+```
+
+该入口与冷启动验收分开：本次会话恢复不创建或修改 `shell-compatibility.ini`，不接受新的 Windows/布局 fingerprint，也不把 `compatibility-unverified` 解释为已验收。只有独立、明确的兼容验收凭据才能允许后续冷启动增强；服务状态或任务栏健康检查都不能代替视觉与交互验收。

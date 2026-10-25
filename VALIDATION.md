@@ -1,4 +1,8 @@
-# 0.11.20-preview 验证与发布边界
+# 0.11.21-preview 验证与发布边界
+
+本轮可靠性验收见 [启动与窗口验证](docs/RELIABILITY_ACCEPTANCE.md)。发布版本已通过 scripts/Test.ps1 完整隔离回归（退出码 0），以及发布前置检查器的 16 项隔离检查。最终归档、四文件摘要和源码提交绑定记录在各 Release 的 build-manifest.json 与 frontend-update.json；它们不表示增强运行时已包含。以下保留 0.11.20-preview 的历史记录；其中“未验收”只描述当时范围。
+
+# 0.11.20-preview 历史记录
 
 ## 已有验证记录
 

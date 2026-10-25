@@ -64,7 +64,8 @@ public sealed class ShellColdUpgrade(IColdUpgradeHost host)
 
 public sealed class WindowsColdUpgradeHost(string journals) : IColdUpgradeHost
 {
-    ShellNativeController Controller(string root) => new(root, journals, new NoLiveUnloadHost(WindowsShellActivationHost.CreateForWindows()));
+    ShellNativeController Controller(string root) => new(root, journals, new NoLiveUnloadHost(WindowsShellActivationHost.CreateForWindows()),
+        explorerPrelaunch: ExplorerPrelaunchController.Current());
     public ColdUpgradeSource ReadSource(string root)
     {
         var login = ShellLoginRegistration.Current();

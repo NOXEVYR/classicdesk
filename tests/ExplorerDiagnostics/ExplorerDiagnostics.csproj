@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup><Compile Include="../../src/ClassicDesk/ShellExplorerDiagnostics.cs" Link="ShellExplorerDiagnostics.cs" /></ItemGroup>
+  <ItemGroup><Compile Include="../../src/ClassicDesk/ShellExplorerTabEvidence.cs" Link="ShellExplorerTabEvidence.cs" /></ItemGroup>
+</Project>

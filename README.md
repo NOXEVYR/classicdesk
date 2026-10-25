@@ -1,16 +1,18 @@
 # ClassicDesk · Windows 桌面布局与外观工具
 
-> **0.11.20-preview · 前端与方案预览版**：[焦点与菜单修复](docs/FOCUS_AND_MENU.md)、[随设置变化的桌面效果图与方案卡片](docs/PROFILE_VISUAL_PREVIEW.md)、[独立开始菜单与布局编辑](docs/LOCAL_PARITY_FEATURES.md)、[前端软件更新](docs/FRONTEND_UPDATES.md)。保存和预览不会自动向 Windows 应用设置；原生 Alt/Popup、管理员组件及完整系统替代仍未实机验收。
+> **0.11.21-preview · 文件窗口重建与启动可靠性修复**。补齐原版设置面板中的旧窗口重建，保留原目录并核对替代窗口后才关闭目标窗口；改进 Win10 导航栏生命周期和开机验收完成后的持续自动加载。实际验证范围见 [本轮验收](docs/RELIABILITY_ACCEPTANCE.md)。
+
+公开 ZIP 为独立前端，公开源码包含原生布局与服务修复。**前端更新不会替换已安装的第三方增强运行时或服务宿主**；完整增强安装包仍未分发。当前机器已安装并验收的增强可继续运行，升级前端不要求重启 Explorer 或重启电脑。
 
 设置页上方的桌面示意随草稿立即变化，“放大预览”进入方案页的大图。编辑小图标、开始/搜索定位、最大化不透明和 Ctrl 菜单参数时，自动切到对应场景；也可以用图上方的状态菜单自行切换。自己的方案有名称、缩略图和预览按钮；复制、重命名、更新与归档在各自卡片的“更多”菜单中。
 
 效果图使用原创矢量绘制，表示当前编辑方案的大致布局；皮肤配色不代表 Windows 壁纸已改变，图中的程序、文件、时间和菜单内容都是合成示意。原方案文件格式与草稿保存、撤销、导入导出保持兼容。
 
-此前 **0.11.16-preview** 的全靠左布局、独立原生自动隐藏及 Windows 任务栏合并/文字标签设置入口保留。详见 [功能说明](docs/LOCAL_TASKBAR_FEATURES.md) 与 [验证记录](VALIDATION.md)。本版以已测程序文件发布，只调整公开文档和更新登记，没有在发布收尾阶段重新构建。
+此前 **0.11.16-preview** 的全靠左布局、独立原生自动隐藏及 Windows 任务栏合并/文字标签设置入口保留。详见 [功能说明](docs/LOCAL_TASKBAR_FEATURES.md) 与 [验证记录](VALIDATION.md)。历史包与原验证记录保留；本版按新的源码提交构建，修复范围与发布资产分别记录。
 
-[下载 Windows x64 预览版](https://github.com/NOXEVYR/classicdesk/releases/tag/v0.11.20-preview) · [历史版本](https://github.com/NOXEVYR/classicdesk/releases) · [功能对照](docs/STARTALLBACK_PARITY.md)
+[下载 Windows x64 预览版](https://github.com/NOXEVYR/classicdesk/releases/tag/v0.11.21-preview) · [历史版本](https://github.com/NOXEVYR/classicdesk/releases) · [功能对照](docs/STARTALLBACK_PARITY.md)
 
-## 本版新增
+## 已保留的前端功能
 
 - **方案卡片与参数效果图**：当前草稿的大图、保存方案的缩略图以及七种场景；相关设置自动展开小图标、开始/搜索、最大化和 Ctrl 菜单示意，未向 Windows 提交。
 - **主题菜单与焦点**：纯容器退出 Tab 序列，交互控件保留主题焦点；场景/更多菜单、分隔线、选项和长提示统一皮肤，修复混合菜单容器异常。
@@ -55,7 +57,7 @@
 
 ## 下载
 
-[Windows x64 · 0.11.20-preview ZIP](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.20-preview/ClassicDesk-0.11.20-preview-windows-x64.zip) · [公开源码 ZIP](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.20-preview/ClassicDesk-0.11.20-preview-source-public.zip) · [SHA-256 校验](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.20-preview/SHA256SUMS.txt)
+[Windows x64 · 0.11.21-preview ZIP](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.21-preview/ClassicDesk-0.11.21-preview-windows-x64.zip) · [公开源码 ZIP](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.21-preview/ClassicDesk-0.11.21-preview-source-public.zip) · [SHA-256 校验](https://github.com/NOXEVYR/classicdesk/releases/download/v0.11.21-preview/SHA256SUMS.txt)
 
 ## 运行
 
@@ -91,7 +93,7 @@
 
 已有 StartAllBack 正在加载、其他增强实例、读取不完整、包/配置修订变化或未完成记录都会阻止冲突操作。不会替用户停用 StartAllBack、绕过激活、重启 Explorer、强停其他进程或安装自启动。安装存在本身不代表冲突，完整检查明确未加载时可以保留原安装。
 
-恢复仅处理本工具确认拥有且没有被外部修改的状态。未知写入/启动/退出结果进入待人工检查；文件锁和修订检查不是操作系统原子 CAS。实际 Ribbon、任务栏与菜单效果、重启后的行为、多显示器和不同 Windows 构建仍待验证。
+恢复仅处理本工具确认拥有且没有被外部修改的状态。未知写入/启动/退出结果进入待人工检查；文件锁和修订检查不是操作系统原子 CAS。已验收的 Ribbon、顶部交互、窗口重建与开机结果见本轮验收；多显示器、不同 Windows 构建和长期稳定性不能由本次结果推定。
 
 ## 构建与测试
 
@@ -103,7 +105,7 @@ dotnet publish src/ClassicDesk/ClassicDesk.csproj -c Release --no-self-contained
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Test.ps1
 ```
 
-`scripts/Test.ps1` 包含 Core、Host、Frontend、VisualPreview、FocusMenu、ReleaseBoundary、ServiceUI、AutoHide、ColdUpgrade、UpdatesFeed、UpdatesInstall、UpdatesUI、StartCore、StartUI、LayoutDesign 十五组隔离检查。已有最终记录为832通过/0失败；最后五组范围复测245/0，重叠检查不累计。另有 `tests/ShellService` 离线服务包测试，需要已核对的预备包和全新输出目录，本版未执行真实管理员组件安装。测试不显示应用窗口、不写真实系统设置、不启动增强引擎。运行报告与夹具可能含机器路径，不提交公共仓库。
+`scripts/Test.ps1` 执行当前源码的隔离回归；它不显示应用窗口、不写真实系统设置、不启动增强引擎。管理员服务、冷启动与真实窗口交互证据单独列在 [验证记录](VALIDATION.md)，不把模拟、离屏测试与实机结果混为一谈。运行日志和合成夹具留在本地，不随公开包分发。
 
 ## 源码结构
 

@@ -1,6 +1,9 @@
 param([Parameter(Mandatory=$true)][string]$ReportDirectory,
       [Parameter(Mandatory=$true)][string]$NuGetConfig)
 $ErrorActionPreference = 'Stop'
+$dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
+$dotnetExecutable = if ($dotnetCommand -and $dotnetCommand.CommandType -eq 'Application') { $dotnetCommand.Source } else { Join-Path $env:USERPROFILE '.dotnet/dotnet.exe' }
+if (-not (Test-Path -LiteralPath $dotnetExecutable -PathType Leaf)) { throw 'The .NET SDK was not found on PATH or in the current user .dotnet directory.' }
 # Only unique synthetic local fixtures; no real Start Menu, settings or application launch.
 $reportPath = [System.IO.Path]::GetFullPath($ReportDirectory)
 if ($reportPath.StartsWith('\\') -or $reportPath.StartsWith('//')) { throw 'Use a local report directory.' }
@@ -12,7 +15,7 @@ New-Item -ItemType Directory -Path $targetPath,$scanPath -Force | Out-Null
 New-Item -ItemType Junction -Path (Join-Path $scanPath 'linked') -Target $targetPath | Out-Null
 New-Item -ItemType Junction -Path (Join-Path $scanPath 'spare') -Target $targetPath | Out-Null
 $projectPath = Join-Path $PSScriptRoot 'StartCore.csproj'
-dotnet restore $projectPath --configfile $NuGetConfig
+& $dotnetExecutable restore $projectPath --configfile $NuGetConfig
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-dotnet run --project $projectPath -c Release --no-restore -- $reportPath $fixturePath
+& $dotnetExecutable run --project $projectPath -c Release --no-restore -- $reportPath $fixturePath
 exit $LASTEXITCODE

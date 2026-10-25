@@ -5,7 +5,8 @@
     <UseWPF>true</UseWPF>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>0.11.20-preview</Version>
+    <Version>0.11.21-preview</Version>
+    <InformationalVersion>0.11.21-preview+startupguard.3-session</InformationalVersion>
     <AssemblyName>ClassicDesk</AssemblyName>
     <StartupObject>ClassicDesk.ShellProgram</StartupObject>
     <ApplicationIcon>Assets/ClassicDesk.ico</ApplicationIcon>
@@ -18,15 +19,20 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="ShellExplorerDiagnostics.cs;ShellExplorerRebuild.cs;ShellExplorerPanel.cs;ExplorerPrelaunch.cs" />
+    <Compile Include="WindowsExplorerRebuildHost.cs;ExplorerRebuildBroker.cs;ShellExplorerRebuildPanel.cs;ShellExplorerModalEvidence.cs;ShellExplorerTabEvidence.cs" />
     <Compile Include="ShellProfileOverview.cs" />
     <Compile Include="ClassicStartProfile.cs;ClassicStartCatalog.cs;ClassicStartMenuWindow.cs;TaskbarDesignProfile.cs;TaskbarDesignLayout.cs;LayoutWorkbenchWindow.cs" />
     <Compile Include="TaskbarAutoHide.cs;TaskbarAutoHidePanel.cs" />
     <Compile Include="FrontendUpdateModels.cs;FrontendUpdateFeed.cs;FrontendUpdateSchedule.cs;FrontendUpdateInstaller.cs;FrontendUpdatePanel.cs;FrontendUpdateCoordinator.cs" />
-    <Compile Include="ShellServiceLayout.cs;ShellServicePanel.cs" />
+    <Compile Include="ShellServiceLayout.cs;ShellServiceSession.cs;ShellServicePanel.cs" />
     <Content Include="../../scripts/Install-ShellService.ps1" Link="Install-ShellService.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../scripts/Explorer-StartupPrerequisite.ps1" Link="Explorer-StartupPrerequisite.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../scripts/Prepare-ColdDiagnostic.ps1" Link="Prepare-ColdDiagnostic.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../../scripts/Complete-ColdDiagnostic.ps1" Link="Complete-ColdDiagnostic.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../scripts/Disable-ClassicDesk-NextBoot.vbs" Link="Disable-ClassicDesk-NextBoot.vbs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Include="ShellProfileLibrary.cs;ShellLoginResume.cs;ShellColdUpgrade.cs;ShellServicePackage.cs;ShellServiceStatus.cs;ShellServiceReview.cs" />
-    <Compile Include="AppIcons.cs;ShellPreview.cs;ShellProfile.cs;ShellSettingsWindow.cs;ShellBackendPlan.cs;ShellBackendConfig.cs;ShellProgram.cs;ShellActivation.cs;ShellActivationHost.cs;ShellNativeController.cs;ShellNativePanel.cs" />
+    <Compile Include="AppIcons.cs;ShellPreview.cs;ShellProfile.cs;ShellSettingsWindow.cs;ShellBackendPlan.cs;ShellBackendConfig.cs;ShellProgram.cs;ShellActivation.cs;ShellActivationHost.cs;ShellNativeController.cs;ShellNativePanel.cs;ShellTaskbarDiagnostics.cs" />
     <Resource Include="Assets/ClassicDesk.ico" />
   </ItemGroup>
   <ItemGroup><Resource Include="Assets/starlight-anime.png"/><Resource Include="Assets/skin-*.png"/></ItemGroup>

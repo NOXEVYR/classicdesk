@@ -1,4 +1,4 @@
-using ClassicDesk;
+﻿using ClassicDesk;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -18,6 +18,7 @@ foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirec
 var metadata = Path.Combine(fixture, "service-package.json");
 var original = File.ReadAllBytes(metadata);
 var bundle = ShellServicePackage.Verify(fixture);
+var currentProfile = bundle.TargetProfile ?? bundle.Source.AppliedProfile;
 var results = new List<object>();
 void Check(bool condition) { if (!condition) throw new Exception("Assertion failed"); }
 void Reject(Action action) { try { action(); } catch (Exception e) when (e is IOException or InvalidDataException or InvalidOperationException) { return; } throw new Exception("Expected rejection"); }
@@ -44,6 +45,31 @@ void Tamper(string relative, string text, bool reseal)
     finally { File.WriteAllBytes(path, before); }
 }
 Test("reviewed offline bundle verifies", () => Check(ShellServicePackage.Verify(fixture).Files.Count == bundle.Files.Count));
+Test("runtime compiler preserves exact Explorer library and version", () =>
+{
+    var runtime = Path.Combine(fixture, "Runtime");
+    var environment = new ShellBackendEnvironment(DateTime.UtcNow, "X64", null, null, null, [], [], [], [], "unknown", []);
+    var module = ShellBackendPlanner.CreatePlan(currentProfile, environment, runtime).Modules.Single(m => m.Id == "explorer-frame-classic");
+    var library = ShellBackendConfig.RuntimeLibraryFileName(runtime, module);
+    var ini = ShellBackendConfig.BuildModIni(module, module.Selected, DateTimeOffset.UnixEpoch, library);
+    Check(ini == File.ReadAllText(Path.Combine(runtime, "AppData/Engine/Mods/explorer-frame-classic.ini")));
+    if (bundle.RuntimeManifest == ShellBackendConfig.CorrectedExplorerManifest)
+    {
+        Check(library == ShellBackendConfig.CorrectedExplorerLibrary && ini.Contains("Version=1.0.8-classicdesk.2\r\n"));
+        Tamper("Runtime/AppData/Engine/Mods/explorer-frame-classic.ini", ini.Replace("1.0.8-classicdesk.2", "1.0.8"), true);
+    }
+    if (bundle.RuntimeManifest == ShellBackendConfig.NavigationCreationManifest)
+    {
+        Check(library == ShellBackendConfig.NavigationCreationLibrary && ini.Contains("Version=1.0.9-classicdesk.5\r\n"));
+        Check(!ini.Contains("Version=1.0.9-classicdesk.3\r\n"));
+    }
+    if (bundle.RuntimeManifest == ShellBackendConfig.NavigationRedrawManifest)
+    {
+        Check(library == ShellBackendConfig.NavigationRedrawLibrary && ini.Contains("Version=1.0.9-classicdesk.3\r\n"));
+        Tamper("Runtime/AppData/Engine/Mods/explorer-frame-classic.ini", ini.Replace("1.0.9-classicdesk.3", "1.0.8-classicdesk.2"), true);
+    }
+    Check(ShellBackendConfig.ExplorerLibraryForManifest(new string('0', 64)) is null);
+});
 Test("trailing separator accepted", () => Check(ShellServicePackage.Verify(fixture + Path.DirectorySeparatorChar).SchemaVersion == 1));
 Test("unknown state rejected", () => { Write(bundle with { State = "active" }); Reject(() => ShellServicePackage.Verify(fixture)); });
 Test("unreviewed host rejected", () => { Write(bundle with { HostSha256 = new('A', 64) }); Reject(() => ShellServicePackage.Verify(fixture)); });
@@ -53,7 +79,11 @@ Test("asset size budget enforced", () => { Write(bundle with { Files = bundle.Fi
 Test("modified configuration rejected", () => Tamper("Runtime/AppData/Engine/settings.ini", "[Settings]\r\nInclude=*\r\n", false));
 Test("self-consistent broad injection scope rejected", () => Tamper("Runtime/AppData/Engine/settings.ini", "[Settings]\r\nSafeMode=0\r\nInclude=*\r\n", true));
 Test("self-consistent unknown module library rejected", () => Tamper("Runtime/AppData/Engine/Mods/taskbar-start-button-position.ini", "[Mod]\r\nLibraryFileName=unreviewed.dll\r\n", true));
-Test("self-consistent profile substitution rejected", () => { Write(bundle with { Source = bundle.Source with { AppliedProfile = bundle.Source.AppliedProfile with { StartOnLeft = !bundle.Source.AppliedProfile.StartOnLeft } } }); Reject(() => ShellServicePackage.Verify(fixture)); });
+Test("self-consistent profile substitution rejected", () => {
+    var changed = currentProfile with { StartOnLeft = !currentProfile.StartOnLeft };
+    Write(bundle.TargetProfile is null ? bundle with { Source = bundle.Source with { AppliedProfile = changed } } : bundle with { TargetProfile = changed });
+    Reject(() => ShellServicePackage.Verify(fixture));
+});
 Test("extra file rejected", () => { var path=Path.Combine(fixture,"extra.ini");try { File.WriteAllText(path,"extra");Reject(() => ShellServicePackage.Verify(fixture)); } finally { File.Delete(path); } });
 Test("service states never offer a second engine or legacy restore", () =>
 {
@@ -64,7 +94,7 @@ Test("service states never offer a second engine or legacy restore", () =>
 Test("running old service does not report staged update as applied", () =>
 {
     var review = new ShellServiceObservation(true, 2, 4, "test", true).Review();
-    Check(review.Title.Contains("等待重启") && !review.IsRunning && !review.CanEnable && !review.CanRestore && !review.CanResume);
+    Check(review.Title.Contains("等待兼容验收") && !review.IsRunning && !review.CanEnable && !review.CanRestore && !review.CanResume);
 });
 var installation = Path.Combine(output, "installed-fixture");
 Directory.CreateDirectory(installation);
@@ -75,9 +105,9 @@ foreach (var file in Directory.EnumerateFiles(fixture, "*", SearchOption.AllDire
     Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(file, target);
 }
 var receiptPath = Path.Combine(installation, "install-record.json");
-File.WriteAllText(receiptPath, JsonSerializer.Serialize(new { bundle.HostSha256, bundle.RuntimeManifest, bundle.OwnerSid, bundle.Source, bundle.Files }));
+File.WriteAllText(receiptPath, JsonSerializer.Serialize(new { bundle.HostSha256, bundle.RuntimeManifest, bundle.OwnerSid, bundle.Source, bundle.Files, bundle.TargetProfile }));
 var receiptHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(receiptPath)));
-ShellServiceLayoutReview LayoutReview(ShellProfile p) => new(installation, receiptHash, bundle.Source.AppliedProfile, p, false, ShellPresets.Changes(bundle.Source.AppliedProfile, p));
+ShellServiceLayoutReview LayoutReview(ShellProfile p) => new(installation, receiptHash, currentProfile, p, false, ShellPresets.Changes(currentProfile, p));
 string NewLayoutFolder() => Path.Combine(output, "layout-" + Guid.NewGuid().ToString("N"));
 Test("layout preparation compiles selected size and keeps original recovery source", () =>
 {
@@ -98,8 +128,8 @@ Test("layout preparation rejects invalid dimensions before writing", () =>
 });
 Test("layout source and target must be paired", () =>
 {
-    Write(bundle with { TargetProfile = bundle.Source.AppliedProfile }); Reject(() => ShellServicePackage.Verify(fixture));
-    Write(bundle with { LayoutSource = new(installation, receiptHash) }); Reject(() => ShellServicePackage.Verify(fixture));
+    Write(bundle with { TargetProfile = currentProfile, LayoutSource = null }); Reject(() => ShellServicePackage.Verify(fixture));
+    Write(bundle with { LayoutSource = new(installation, receiptHash), TargetProfile = null }); Reject(() => ShellServicePackage.Verify(fixture));
 });
 Test("layout update cannot reseal arbitrary injection rules", () =>
 {

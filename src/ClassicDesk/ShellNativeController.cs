@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Windows;
 
@@ -18,11 +18,12 @@ public sealed partial class ShellNativeController : IShellNativeController
     public const string FourthAdaptiveRuntimeManifest = "73523BCC5CF7C294128C9F1D6A04A2D11456E9514C4457FFB4102A6742148BA5";
     public const string FifthAdaptiveRuntimeManifest = "4CE7713E3B25903B7A33CE043F4A12338DA6B24BE69B09FF687092CD4D82DB44";
     public const string SixthAdaptiveRuntimeManifest = "49C4EF0FB577AC4D053973F46FADD4B3F8AF6948863E63FDCD8B3E3AD5EAF423";
-    public const string ReviewedRuntimeManifest = "02FB7D1F8FD886CBEF1569DA87F481ACD433B1E8C8BD064A4B7EED66A253FA2C";
+    public const string PreStartupRepairRuntimeManifest = "02FB7D1F8FD886CBEF1569DA87F481ACD433B1E8C8BD064A4B7EED66A253FA2C";
+    public const string ReviewedRuntimeManifest = "D6011E31F21E582748DF06A9536A8E5798F7043F3B881845D46ECEE9990F6315";
     public static ActivationPackageCheck CheckReviewedPackage(string root)
     {
         var check = WindowsShellActivationHost.CheckPackage(root);
-        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest && check.Package.ManifestSha256 != ThirdAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FourthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FifthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SixthAdaptiveRuntimeManifest)
+        if (check.Package.ManifestSha256 != ReviewedRuntimeManifest && check.Package.ManifestSha256 != PreStartupRepairRuntimeManifest && check.Package.ManifestSha256 != LegacyRuntimeManifest && check.Package.ManifestSha256 != StyleRuntimeManifest && check.Package.ManifestSha256 != StaticRuntimeManifest && check.Package.ManifestSha256 != FirstAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SecondAdaptiveRuntimeManifest && check.Package.ManifestSha256 != ThirdAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FourthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != FifthAdaptiveRuntimeManifest && check.Package.ManifestSha256 != SixthAdaptiveRuntimeManifest)
             throw new InvalidDataException("运行资产清单不是已核对的版本。");
         return check;
     }
@@ -30,6 +31,7 @@ public sealed partial class ShellNativeController : IShellNativeController
     readonly IActivationHost host;
     readonly ShellActivationCoordinator coordinator;
     readonly ShellLoginRegistration? login;
+    readonly ExplorerPrelaunchController? explorerPrelaunch;
     readonly SemaphoreSlim gate = new(1, 1);
     bool SystemHost => host is WindowsShellActivationHost { IsSystemHost: true };
     void RequirePortableMode() { if (SystemHost) ShellServiceStatus.RequireAbsent(); }
@@ -39,11 +41,13 @@ public sealed partial class ShellNativeController : IShellNativeController
         ArgumentNullException.ThrowIfNull(proposal); proposal.Validate();
         return proposal with { ClassicRibbon = false, UseClassicNavigationBar = false, ClassicContextMenu = false };
     }
-    public ShellNativeController(string root, string journals, IActivationHost adapter, ShellLoginRegistration? loginRegistration = null)
+    public ShellNativeController(string root, string journals, IActivationHost adapter, ShellLoginRegistration? loginRegistration = null,
+        ExplorerPrelaunchController? explorerPrelaunch = null)
     {
         packageRoot = Path.GetFullPath(root); journalDirectory = Path.GetFullPath(journals); host = adapter;
         coordinator = new(host, new FileActivationJournalStore(journalDirectory));
         login = loginRegistration;
+        this.explorerPrelaunch = explorerPrelaunch ?? (adapter is WindowsShellActivationHost ? ExplorerPrelaunchController.Current() : null);
     }
     public static void Open(Window owner, ShellProfile profile)
     {
@@ -62,6 +66,7 @@ public sealed partial class ShellNativeController : IShellNativeController
         if (PendingRecords().Length != 0) throw new InvalidOperationException("出现未结束的切换记录，请先检查恢复状态。");
         var verified = CheckReviewedPackage(packageRoot).Package;
         if (verified != review.EnableTicket.Package) throw new InvalidOperationException("增强组件已变化，请重新检查。");
+        if (review.EnableTicket.Profile.ClassicRibbon) explorerPrelaunch?.EnsureRibbon();
         return coordinator.Activate(review.EnableTicket);
     });
     public Task<ActivationResult> RestoreAsync(ShellNativeReview review) => Serialized(() =>
@@ -69,7 +74,19 @@ public sealed partial class ShellNativeController : IShellNativeController
         RequirePortableMode();
         if (!review.CanRestore || review.RestoreTicket is null) throw new InvalidOperationException("请先检查恢复记录。");
         login?.SetEnabled(false);
-        return coordinator.Restore(review.RestoreTicket);
+        var result = coordinator.Restore(review.RestoreTicket);
+        if (result.State == ShellActivationState.Restored && result.Error is null && explorerPrelaunch is not null)
+        {
+            try
+            {
+                var prelaunch = explorerPrelaunch.Review();
+                if (prelaunch.CanRestore) explorerPrelaunch.Restore(prelaunch);
+                else if (prelaunch.Journal is { Phase: not "restored" })
+                    return result with { Error = "增强规则已恢复，但原生预加载记录存在冲突；保留记录，未覆盖系统设置。" };
+            }
+            catch (Exception e) { return result with { Error = "增强规则已恢复，原生预加载恢复未完成：" + e.Message }; }
+        }
+        return result;
     });
     public Task<ActivationResult> ResumeAsync(ShellNativeReview review) => Serialized(() =>
     {
@@ -79,6 +96,7 @@ public sealed partial class ShellNativeController : IShellNativeController
         if (pending.Length != 1 || pending[0].Id != review.ResumeTicket.JournalId) throw new InvalidOperationException("恢复记录已变化。");
         var verified = CheckReviewedPackage(packageRoot).Package;
         if (pending[0].Package != verified) throw new InvalidOperationException("增强组件已变化。");
+        if (pending[0].Profile.ClassicRibbon) explorerPrelaunch?.EnsureRibbon();
         return coordinator.Resume(review.ResumeTicket);
     });
     public bool SupportsLoginResume => login is not null && (!SystemHost || !ShellServiceStatus.Read().Registered);
@@ -135,7 +153,7 @@ public sealed partial class ShellNativeController : IShellNativeController
             catch (Exception e) { return new("引擎正在运行，规则需要核对", e.Message, CanRestore: true, RestoreTicket: ticket); }
             var applied = journal.Profile;
             var summary = (applied.SkipTaskbarLayout ? "保留任务栏位置" : ShellPresets.TaskbarLayoutName(applied)) +
-                (applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
+                (applied.UseNativeTaskbarSizing ? "；尺寸由 Windows 管理" : applied.SkipTaskbarSizing ? "" : $"；图标 {applied.IconSize} / 栏高 {applied.TaskbarHeight} / 按钮宽 {applied.TaskbarButtonWidth}") +
                 (applied.ClassicRibbon ? "；Win10 功能区" : applied.UseClassicNavigationBar ? "；经典导航栏" : "；Win11 命令栏") +
                 (applied.TranslucentTaskbar ? "；透明任务栏" : "") +
                 (applied.FollowMaximizedTheme ? journal.Package.ManifestSha256 == ReviewedRuntimeManifest ? "；仅最大化或全屏时不透明" : journal.Package.ManifestSha256 is FourthAdaptiveRuntimeManifest or FifthAdaptiveRuntimeManifest ? "；应用不透明、桌面透明（旧版组件）" : "；最大化窗口明暗跟随（旧版组件）" : "") +

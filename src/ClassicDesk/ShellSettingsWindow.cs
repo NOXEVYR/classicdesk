@@ -61,6 +61,7 @@ public sealed class ShellSettingsWindow : Window
     readonly Action? openTaskbarSettings;
     readonly Action<Window>? manageUpdates;
     readonly Action<Window>? manageLayouts;
+    readonly Action<Window>? inspectExplorer;
     bool externalOperation, updateExitRequested;
     readonly ScrollViewer scroll;
     ShellProfile saved;
@@ -86,12 +87,14 @@ public sealed class ShellSettingsWindow : Window
     }
 
     public ShellSettingsWindow(ShellProfile? initial = null, string? path = null, Func<ShellProfile, Task<string>>? inspectPlan = null, Action<Window, ShellProfile>? manageNative = null,
-        Action<Window>? manageAutoHide = null, Action? openTaskbarSettings = null, Action<Window>? manageUpdates = null, Action<Window>? manageLayouts = null)
+        Action<Window>? manageAutoHide = null, Action? openTaskbarSettings = null, Action<Window>? manageUpdates = null, Action<Window>? manageLayouts = null,
+        Action<Window>? inspectExplorer = null)
     {
         profilePath = path ?? ShellProfileFile.DefaultPath; this.manageNative = manageNative;
         this.manageAutoHide = manageAutoHide; this.openTaskbarSettings = openTaskbarSettings;
         this.manageUpdates = manageUpdates;
         this.manageLayouts = manageLayouts;
+        this.inspectExplorer = inspectExplorer;
         library = new ShellProfileLibrary(profilePath + ".library.json");
         string? loadError = null;
         try { var snapshot = ShellProfileFile.Load(profilePath); saved = initial ?? snapshot.Profile; saved.Validate(); sourceRevision = snapshot.Revision; }
@@ -229,10 +232,16 @@ public sealed class ShellSettingsWindow : Window
             }
             settings.Children.Add(layoutGrid);
             Section("图标与尺寸");
+            var sizingRows = new StackPanel();
+            var sizingOwner = Choice(["Windows 原生", "ClassicDesk 自定义"], Draft.UseNativeTaskbarSizing ? 0 : 1,
+                i => { Edit(Draft with { UseNativeTaskbarSizing = i == 0 }); SelectPage(0); });
+            AutomationProperties.SetAutomationId(sizingOwner, "shell-sizing-owner");
+            AddRow(sizingRows, "尺寸管理方式", "原生模式沿用 Windows 当前大小，不加载尺寸增强；下方自定义数值保留，切换回来可继续使用。", sizingOwner, true);
             var sizeTiles = new System.Windows.Controls.Primitives.UniformGrid { Columns = 2 };
             void Tile(string name, string help, ComboBox control, string icon) {
                 var panel = new StackPanel(); var title = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0,0,0,9) }; title.Children.Add(AppIcons.View(icon,17)); var label=Label(name,12,true); label.Margin=new Thickness(8,0,0,0); title.Children.Add(label); panel.Children.Add(title);
                 control.Width = double.NaN; control.HorizontalAlignment = HorizontalAlignment.Stretch; AutomationProperties.SetName(control,name); AutomationProperties.SetHelpText(control,help); control.ToolTip=help; panel.Children.Add(control);
+                if (name != "开始按钮位置") control.IsEnabled = !Draft.UseNativeTaskbarSizing;
                 sizeTiles.Children.Add(new Border { Background=Brushes.White, BorderBrush=Brush("#DEE0E8"), BorderThickness=new Thickness(1), CornerRadius=new CornerRadius(10), Padding=new Thickness(14,11,14,11), Margin=new Thickness(0,0,8,8), Child=panel });
             }
             Tile("开始按钮位置", "全靠左使用 Windows 原生左对齐；其余两档应用居中。", Choice(["靠左", "居中", "开始与应用全靠左"], Draft.LeftAlignedApps ? 2 : Draft.StartOnLeft ? 0 : 1, i => Edit(Draft with { StartOnLeft = i != 1, LeftAlignedApps = i == 2 })), "layout");
@@ -240,9 +249,12 @@ public sealed class ShellSettingsWindow : Window
             Tile("任务栏高度", "任务栏的整体高度。", PixelChoice(ShellProfile.TaskbarHeights, Draft.TaskbarHeight, value => Edit(Draft with { TaskbarHeight = value })), "taskbar");
             Tile("按钮宽度", "按钮宽度控制图标两侧留白；与图标大小分别设置。", PixelChoice(ShellProfile.ButtonWidths, Draft.TaskbarButtonWidth, value => Edit(Draft with { TaskbarButtonWidth = value })), "system");
             settings.Children.Add(sizeTiles);
+            settings.Children.Add(sizingRows);
             var advancedRows = new StackPanel();
             AddRow(advancedRows, "启用布局调整", "关闭时保留当前位置参数与设计预览。", Toggle(!Draft.SkipTaskbarLayout, value => Edit(Draft with { SkipTaskbarLayout = !value })));
-            AddRow(advancedRows, "启用尺寸调整", "关闭时保留图标、栏高和按钮尺寸参数。", Toggle(!Draft.SkipTaskbarSizing, value => Edit(Draft with { SkipTaskbarSizing = !value })));
+            var customSizing = Toggle(!Draft.SkipTaskbarSizing, value => Edit(Draft with { SkipTaskbarSizing = !value }));
+            customSizing.IsEnabled = !Draft.UseNativeTaskbarSizing;
+            AddRow(advancedRows, "启用尺寸调整", "自定义模式使用；关闭时保留图标、栏高和按钮尺寸参数。", customSizing);
             Section("背景与托盘", "随任务栏布局增强应用；动态背景当前仅支持主屏。");
             var appearanceRows = Group();
             var translucent = Toggle(Draft.TranslucentTaskbar, value => Edit(Draft with { TranslucentTaskbar = value, FollowMaximizedTheme = value && Draft.FollowMaximizedTheme })); dependentControls["translucent"] = translucent;
@@ -261,9 +273,12 @@ public sealed class ShellSettingsWindow : Window
                 try { this.openTaskbarSettings?.Invoke(); }
                 catch (Exception e) { feedback.Text = "无法打开 Windows 设置：" + e.Message; }
             }); systemSettings.IsEnabled = this.openTaskbarSettings is not null; AutomationProperties.SetAutomationId(systemSettings, "shell-windows-taskbar");
-            AddRow(nativeRows, "合并按钮与文字标签", "在系统任务栏设置中调整；选项依 Windows 版本而异，ClassicDesk 不接管这些值。", systemSettings, true);
-            AddRow(advancedRows, "小图标尺寸", "Windows 使用小图标模式时的尺寸。", PixelChoice(ShellProfile.IconSizes, Draft.SmallIconSize, value => Edit(Draft with { SmallIconSize = value }, ShellOverviewMode.SmallIcons)));
-            AddRow(advancedRows, "小按钮宽度", "Windows 使用小图标模式时的按钮宽度。", PixelChoice(ShellProfile.ButtonWidths, Draft.SmallTaskbarButtonWidth, value => Edit(Draft with { SmallTaskbarButtonWidth = value }, ShellOverviewMode.SmallIcons)));
+            AddRow(nativeRows, "位置、大小与按钮合并", "在 Windows 中调整，ClassicDesk 不接管这些值。新版系统可选择位置及默认／小尺寸；原生尺寸需在上方选择 Windows 原生。分开布局、透明和紧凑托盘仍需分别验证兼容性。", systemSettings, true);
+            var smallSize = PixelChoice(ShellProfile.IconSizes, Draft.SmallIconSize, value => Edit(Draft with { SmallIconSize = value }, ShellOverviewMode.SmallIcons));
+            var smallWidth = PixelChoice(ShellProfile.ButtonWidths, Draft.SmallTaskbarButtonWidth, value => Edit(Draft with { SmallTaskbarButtonWidth = value }, ShellOverviewMode.SmallIcons));
+            smallSize.IsEnabled = smallWidth.IsEnabled = !Draft.UseNativeTaskbarSizing;
+            AddRow(advancedRows, "小图标尺寸", "自定义模式的小图标尺寸。", smallSize);
+            AddRow(advancedRows, "小按钮宽度", "自定义模式的小按钮宽度。", smallWidth);
             var system = Toggle(Draft.OtherSystemButtonsOnLeft, value => Edit(Draft with { OtherSystemButtonsOnLeft = value })); dependentControls["otherButtons"] = system; AddRow(advancedRows, "其他系统按钮靠左", "搜索、任务视图和小组件；居中或全靠左时不生效；全靠左跟随 Windows 原生定位。", system);
             var start = Toggle(Draft.StartMenuOnLeft, value => Edit(Draft with { StartMenuOnLeft = value }, ShellOverviewMode.StartMenu)); dependentControls["startMenu"] = start; AddRow(advancedRows, "开始菜单靠左展开", "居中或全靠左时不生效；全靠左跟随 Windows 原生定位。", start);
             var search = Toggle(Draft.SearchMenuOnLeft, value => Edit(Draft with { SearchMenuOnLeft = value }, ShellOverviewMode.Search)); dependentControls["searchMenu"] = search; AddRow(advancedRows, "所有入口的搜索都靠左", "包含 Win+S 和任务栏搜索；全靠左使用原生定位，其余需开始菜单靠左。", search, true);
@@ -275,6 +290,11 @@ public sealed class ShellSettingsWindow : Window
             var group = Group(); int style = Draft.ClassicRibbon ? 1 : Draft.UseClassicNavigationBar ? 2 : 0;
             AddRow(group, "工具区样式", "功能区与经典导航栏是不同模式。", Choice(["Windows 11 命令栏", "Windows 10 功能区", "经典导航栏"], style, i => Edit(Draft with { ClassicRibbon = i == 1, UseClassicNavigationBar = i == 2 }), 210), true);
             AddNote(Draft.ClassicRibbon ? "主页、共享、查看完整展开；此模式不保留 Windows 11 标签页。" : Draft.UseClassicNavigationBar ? "采用旧版 Windows 11 导航布局，保留标签页。" : "使用当前 Windows 11 命令栏与标签页。", "explorer-mode-note");
+            var inspectWindow = ActionButton("打开并检查新窗口", () => RunExternal(() => this.inspectExplorer?.Invoke(this)));
+            inspectWindow.IsEnabled = this.inspectExplorer is not null;
+            inspectWindow.ToolTip = "选择文件夹并核对实际窗口结构；已有窗口保留，拖动与顶部点击需实测。";
+            AutomationProperties.SetAutomationId(inspectWindow, "shell-explorer-check");
+            settings.Children.Add(inspectWindow);
         }
         else
         {
@@ -419,7 +439,7 @@ public sealed class ShellSettingsWindow : Window
         currentOverviewSurface = new Border { Child = currentOverview, CornerRadius = new CornerRadius(10), ClipToBounds = true, Background = Brush("#ECF0FA"), ToolTip = currentOverview.Explanation };
         AutomationProperties.SetHelpText(currentOverview, currentOverview.Explanation);
         current.Children.Add(currentOverviewSurface);
-        var summary = Label(ShellPresets.TaskbarLayoutName(Draft) + $"  ·  {Draft.IconSize} px 图标 / {Draft.TaskbarHeight} px 高度  ·  " + ShellSkins.All[ShellSkins.Index(Draft)].Name, 11);
+        var summary = Label(ShellPresets.TaskbarLayoutName(Draft) + (Draft.UseNativeTaskbarSizing ? "  ·  Windows 原生尺寸  ·  " : $"  ·  {Draft.IconSize} px 图标 / {Draft.TaskbarHeight} px 高度  ·  ") + ShellSkins.All[ShellSkins.Index(Draft)].Name, 11);
         summary.Margin = new Thickness(0, 8, 0, 0); summary.Foreground = Brush("#61718E"); current.Children.Add(summary);
         var changed = ShellPresets.Changes(saved, Draft);
         if (changed.Count > 0) AddNote("待保存 " + changed.Count + " 项：" + string.Join("、", changed), "shell-change-summary");
@@ -605,6 +625,7 @@ public sealed class ShellSettingsWindow : Window
         previewCaption.Text = preview.Before ? "Windows 11 参考 · 示意" : page switch { 0 => $"{Draft.IconSize} px 图标  /  {Draft.TaskbarHeight} px 高度", 1 => Draft.ClassicRibbon ? "经典功能区 · 示意" : Draft.UseClassicNavigationBar ? "经典导航栏 · 示意" : "Windows 11 命令栏 · 示意", _ => Draft.ClassicContextMenu ? "完整菜单 · 示意" : "Windows 11 菜单 · 示意" };
         if (page == 0 && !preview.Before && overviewMode == ShellOverviewMode.SmallIcons) previewCaption.Text = $"小图标 {Draft.SmallIconSize} px / 按钮 {Draft.SmallTaskbarButtonWidth} px / 栏高 {Draft.TaskbarHeight} px";
         if (page == 0 && !preview.Before && (Draft.SkipTaskbarLayout || Draft.SkipTaskbarSizing)) previewCaption.Text = "设计预览 · 部分增强未选择";
+        if (page == 0 && !preview.Before && Draft.UseNativeTaskbarSizing) previewCaption.Text = "尺寸由 Windows 管理 · 预览不表示当前系统大小";
         for (int i=0; i<layoutChoices.Count; i++) layoutChoices[i].Tag = i == (Draft.LeftAlignedApps ? 2 : Draft.StartOnLeft ? 0 : 1) ? "selected" : null;
         SyncOverviews();
     }
@@ -641,7 +662,7 @@ public sealed class ShellSettingsWindow : Window
         var defaults = ShellPresets.All[ShellPresets.Index(Draft)].Profile;
         var value = page switch
         {
-            0 => Draft with { StartOnLeft = defaults.StartOnLeft, LeftAlignedApps = defaults.LeftAlignedApps, IconSize = defaults.IconSize, TaskbarHeight = defaults.TaskbarHeight, TaskbarButtonWidth = defaults.TaskbarButtonWidth, SmallIconSize = defaults.SmallIconSize, SmallTaskbarButtonWidth = defaults.SmallTaskbarButtonWidth, OtherSystemButtonsOnLeft = defaults.OtherSystemButtonsOnLeft, StartMenuOnLeft = defaults.StartMenuOnLeft, SearchMenuOnLeft = defaults.SearchMenuOnLeft, SkipTaskbarLayout = defaults.SkipTaskbarLayout, SkipTaskbarSizing = defaults.SkipTaskbarSizing, CompactTray = defaults.CompactTray, TranslucentTaskbar = defaults.TranslucentTaskbar, FollowMaximizedTheme = defaults.FollowMaximizedTheme },
+            0 => Draft with { StartOnLeft = defaults.StartOnLeft, LeftAlignedApps = defaults.LeftAlignedApps, IconSize = defaults.IconSize, TaskbarHeight = defaults.TaskbarHeight, TaskbarButtonWidth = defaults.TaskbarButtonWidth, SmallIconSize = defaults.SmallIconSize, SmallTaskbarButtonWidth = defaults.SmallTaskbarButtonWidth, OtherSystemButtonsOnLeft = defaults.OtherSystemButtonsOnLeft, StartMenuOnLeft = defaults.StartMenuOnLeft, SearchMenuOnLeft = defaults.SearchMenuOnLeft, SkipTaskbarLayout = defaults.SkipTaskbarLayout, SkipTaskbarSizing = defaults.SkipTaskbarSizing, UseNativeTaskbarSizing = defaults.UseNativeTaskbarSizing, CompactTray = defaults.CompactTray, TranslucentTaskbar = defaults.TranslucentTaskbar, FollowMaximizedTheme = defaults.FollowMaximizedTheme },
             1 => Draft with { ClassicRibbon = defaults.ClassicRibbon, UseClassicNavigationBar = defaults.UseClassicNavigationBar },
             _ => Draft with { ClassicContextMenu = defaults.ClassicContextMenu, ClassicMenuWithCtrl = defaults.ClassicMenuWithCtrl }
         };

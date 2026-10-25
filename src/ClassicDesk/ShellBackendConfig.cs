@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -79,6 +79,36 @@ public sealed record DisabledBackendConfiguration(string Directory, string Manif
 /// </summary>
 public static class ShellBackendConfig
 {
+    // Exact private runtime reviewed with the corrected creation-time Explorer hook.
+    // This does not authorize arbitrary replacement filenames or promote its boot acceptance.
+    public const string CorrectedExplorerManifest = "F0F4190C37F5178FB5F079D4D0DD4D8CAF5438DDCF113368F715905865A1027E";
+    public const string CorrectedExplorerLibrary = "explorer-frame-classic_1.0.8-classicdesk.2.dll";
+    public const string NavigationRedrawManifest = "C5A8D58F69B42F8D1A1B12E50208BF8B06931E479DAD8259777BE1A6CD057819";
+    public const string NavigationRedrawLibrary = "explorer-frame-classic_1.0.9-classicdesk.3.dll";
+    public const string NavigationCreationManifest = "D6011E31F21E582748DF06A9536A8E5798F7043F3B881845D46ECEE9990F6315";
+    public const string NavigationCreationLibrary = "explorer-frame-classic_1.0.9-classicdesk.5.dll";
+    public static string? ExplorerLibraryForManifest(string hash) => hash.ToUpperInvariant() switch
+    {
+        CorrectedExplorerManifest => CorrectedExplorerLibrary,
+        NavigationRedrawManifest => NavigationRedrawLibrary,
+        NavigationCreationManifest => NavigationCreationLibrary,
+        _ => null
+    };
+    public static string RuntimeLibraryFileName(string runtime, ShellModPlan plan)
+    {
+        if (plan.Id == "explorer-frame-classic")
+        {
+            var manifest = Path.Combine(runtime, "runtime-assets-manifest.json");
+            if (File.Exists(manifest))
+            {
+                WindowsShellActivationHost.RejectReparse(manifest);
+                var bytes = WindowsShellActivationHost.ReadBounded(manifest, 1024 * 1024);
+                if (ExplorerLibraryForManifest(Convert.ToHexString(SHA256.HashData(bytes))) is { } library)
+                    return library;
+            }
+        }
+        return GetLibraryFileName(plan);
+    }
     const string OwnerFile = "classicdesk-package-owner.json";
     const string ManifestFile = "configuration-manifest.json";
     static readonly Encoding IniEncoding = new UnicodeEncoding(false, true, true);
@@ -86,7 +116,7 @@ public static class ShellBackendConfig
     static readonly IReadOnlyDictionary<string, (string Version, string[] Targets)> Supported =
         new Dictionary<string, (string, string[])>(StringComparer.Ordinal)
         {
-            ["taskbar-start-button-position"] = ("1.3.2", ["explorer.exe", "StartMenuExperienceHost.exe"]),
+            ["taskbar-start-button-position"] = ("1.3.2-classicdesk.1", ["explorer.exe", "StartMenuExperienceHost.exe"]),
             ["taskbar-icon-size"] = ("1.3.10", ["explorer.exe"]),
             ["explorer-frame-classic"] = ("1.0.8", ["explorer.exe"]),
             ["explorer-context-menu-classic"] = ("1.0.2", ["explorer.exe"]),
@@ -124,7 +154,14 @@ public static class ShellBackendConfig
         Line("Include=" + string.Join('|', Supported[plan.Id].Targets));
         Line("Exclude="); Line("IncludeCustom="); Line("ExcludeCustom=");
         Line("IncludeExcludeCustomOnly=0"); Line("PatternsMatchCriticalSystemProcesses=0");
-        Line("Architecture=x86-64"); Line("Version=" + plan.Version);
+        var runtimeVersion = plan.Id == "explorer-frame-classic" ? library switch
+        {
+            CorrectedExplorerLibrary => "1.0.8-classicdesk.2",
+            NavigationRedrawLibrary => "1.0.9-classicdesk.3",
+            NavigationCreationLibrary => "1.0.9-classicdesk.5",
+            _ => plan.Version
+        } : plan.Version;
+        Line("Architecture=x86-64"); Line("Version=" + runtimeVersion);
         Line("SettingsChangeTime=" + stamp.ToString(CultureInfo.InvariantCulture));
         Line(""); Line("[Settings]");
         foreach (var item in settings.OrderBy(p => p.Key, StringComparer.Ordinal)) Line(item.Key + "=" + item.Value);

@@ -54,7 +54,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         "Engine/1.7.3/32/msdia140_windhawk.dll", "Engine/1.7.3/32/symsrv_windhawk.dll", "Engine/1.7.3/32/symsrv.yes",
         "Engine/1.7.3/64/msdia140_windhawk.dll", "Engine/1.7.3/64/symsrv_windhawk.dll", "Engine/1.7.3/64/symsrv.yes",
         "AppData/Engine/Mods/64/libc++.whl", "AppData/Engine/Mods/64/libunwind.whl", "AppData/Engine/Mods/64/windhawk-mod-shim.dll",
-        "AppData/Engine/Mods/64/taskbar-start-button-position_1.3.2.dll", "AppData/Engine/Mods/64/taskbar-icon-size_1.3.10.dll",
+        "AppData/Engine/Mods/64/taskbar-start-button-position_1.3.2-classicdesk.1.dll", "AppData/Engine/Mods/64/taskbar-icon-size_1.3.10.dll",
         "AppData/Engine/Mods/64/explorer-frame-classic_1.0.8.dll", "AppData/Engine/Mods/64/explorer-context-menu-classic_1.0.2.dll"];
     string? leaseRoot; int leaseThread;
     ActivationDaemonIdentity? stoppedDuringLease;
@@ -86,7 +86,10 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
             total += expectedBytes;
             if (seen.Count > 128 || total > 256 * 1024 * 1024) throw new InvalidDataException("资产清单超出此精简后端的范围。");
         }
-        if (RequiredAssets.Any(a => !seen.Contains(a)) || executableHash is null) throw new InvalidDataException("运行包缺少必要引擎、模块或依赖。");
+        var explorerLibrary = ShellBackendConfig.ExplorerLibraryForManifest(manifestHash);
+        var required = RequiredAssets.Select(a => a == "AppData/Engine/Mods/64/explorer-frame-classic_1.0.8.dll" &&
+            explorerLibrary is not null ? "AppData/Engine/Mods/64/" + explorerLibrary : a);
+        if (required.Any(a => !seen.Contains(a)) || executableHash is null) throw new InvalidDataException("运行包缺少必要引擎、模块或依赖。");
         if (seen.Contains(AdaptiveBackdropAsset) && !seen.Contains(BackdropAsset)) throw new InvalidDataException("自适应背景模块需要保留原生透明回退组件。");
         if (seen.Contains(BackdropAsset) && !seen.Contains(StyleAsset)) throw new InvalidDataException("原生背景模块需要配套样式模块。");
         var knownModFiles = Targets.Where(p => p.Key is not (ActivationTarget.MainSettings or ActivationTarget.EngineSettings) &&
@@ -126,7 +129,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         if (profile.FollowMaximizedTheme && !File.Exists(SafePath(package.Root, AdaptiveBackdropAsset)))
             throw new InvalidDataException("此运行包没有动态任务栏背景组件。");
         var before = targets.ToDictionary(t => t, t => Read(package, t));
-        var desired = DesiredFiles(profile, before);
+        var desired = DesiredFiles(package.Root, profile, before);
         return new(guards, targets.Select(t =>
             t == ActivationTarget.TaskbarAlignment && profile.SkipTaskbarLayout
                 ? new ActivationChange(t, before[t], before[t].Exists, before[t].Data)
@@ -216,7 +219,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
         return result;
     }
 
-    static Dictionary<ActivationTarget, byte[]> DesiredFiles(ShellProfile profile, Dictionary<ActivationTarget, ActivationItemState> before)
+    static Dictionary<ActivationTarget, byte[]> DesiredFiles(string runtime, ShellProfile profile, Dictionary<ActivationTarget, ActivationItemState> before)
     {
         var unknown = new ShellBackendEnvironment(DateTime.MinValue, "X64", null, null, null, [], [], [], [], "unknown", []);
         var plan = ShellBackendPlanner.CreatePlan(profile, unknown);
@@ -232,7 +235,7 @@ public sealed class WindowsShellActivationHost(IActivationAlignment alignment, I
                 if (ini.TryGetValue("Mod\0SettingsChangeTime", out var stamp) && !int.TryParse(stamp, NumberStyles.None, CultureInfo.InvariantCulture, out previous)) throw new InvalidDataException("模块设置时间戳无效。");
             }
             var next = previous == int.MaxValue ? 1 : previous + 1;
-            output[pair.Key] = IniBytes(ShellBackendConfig.BuildModIni(mod, mod.Selected, DateTimeOffset.FromUnixTimeSeconds(next)));
+            output[pair.Key] = IniBytes(ShellBackendConfig.BuildModIni(mod, mod.Selected, DateTimeOffset.FromUnixTimeSeconds(next), ShellBackendConfig.RuntimeLibraryFileName(runtime, mod)));
         }
         foreach (var target in new[] { ActivationTarget.MainSettings, ActivationTarget.EngineSettings })
         {

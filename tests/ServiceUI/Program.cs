@@ -14,13 +14,21 @@ static class Program
         void Check(bool value) { if (!value) throw new Exception("Assertion failed"); }
         void Test(string name, Action run)
         { try { run(); checks.Add(new { name, passed = true, error = "" }); } catch (Exception e) { checks.Add(new { name, passed = false, error = e.ToString() }); } }
+        Test("running session cannot imply automatic startup", () => {
+            var value = new ShellServiceObservation(true, 4, 4, "fixture").Review();
+            Check(value.Title.Contains("开机自动加载已停用") && value.Detail.Contains("下次重启后不会自动加载"));
+        });
+        Test("expired trial is distinguished from compatibility failure", () => {
+            var value = new ShellServiceObservation(true, 4, 1, "fixture", StartupProtection: "cold-diagnostic-expired").Review();
+            Check(value.Title.Contains("已过期") && value.Detail.Contains("不是本次增强崩溃"));
+        });
         Test("construction does not inspect or write", () => { var host = new Fake(); var panel = new ShellServicePanel(new(), host); Check(host.Reads == 0 && host.Writes == 0 && !panel.ApplyAvailable); panel.Close(); });
         Test("matching profile cannot stage", () => { var host = new Fake { Same = true }; var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); Check(!panel.ApplyAvailable && host.Writes == 0); panel.Close(); });
         Test("review enables update only after success", () => { var host = new Fake(); var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); Check(panel.ApplyAvailable && host.Writes == 0); panel.Close(); });
-        Test("successful update says next reboot and disables repeat write", () => { var host = new Fake(); var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); Check(host.Writes == 1 && panel.StatusText.Contains("等待重启") && !panel.ApplyAvailable); panel.Close(); });
+        Test("successful update requires compatibility acceptance and disables repeat write", () => { var host = new Fake(); var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); Check(host.Writes == 1 && panel.StatusText.Contains("等待兼容验收") && !panel.ApplyAvailable); panel.Close(); });
         Test("cancelled UAC never reports saved", () => { var host = new Fake { Cancel = true }; var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); Check(panel.StatusText.Contains("取消") && !panel.ApplyAvailable && !panel.IsWorking); panel.Close(); });
         Test("failed inspection leaves update unavailable", () => { var host = new Fake { FailRead = true }; var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.ApplyAsync().GetAwaiter().GetResult(); Check(host.Writes == 0 && !panel.ApplyAvailable && panel.StatusText.Contains("无法")); panel.Close(); });
-        Test("pending update displays staged state", () => { var host = new Fake { Pending = true }; var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); Check(panel.StatusText.Contains("等待重启")); panel.Close(); });
+        Test("pending update displays staged state", () => { var host = new Fake { Pending = true }; var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); Check(panel.StatusText.Contains("等待兼容验收")); panel.Close(); });
         Test("disable is explicit and does not claim current engine stopped", () => { var host = new Fake(); var panel = new ShellServicePanel(new(), host); panel.RefreshAsync().GetAwaiter().GetResult(); panel.DisableAsync().GetAwaiter().GetResult(); Check(host.Disables == 1 && panel.StatusText.Contains("下次开机") && !panel.ApplyAvailable); panel.Close(); });
         Test("successful submission replaces old snapshot without automatic reread", () =>
         {

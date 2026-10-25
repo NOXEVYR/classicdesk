@@ -2,7 +2,10 @@ using ClassicDesk;
 using System.IO;
 using System.Text.Json;
 
-var root = Path.Combine(Path.GetTempPath(), "ClassicDesk-release-boundary-" + Guid.NewGuid().ToString("N"));
+if (args.Length != 1 || !Path.IsPathFullyQualified(args[0])) throw new ArgumentException("Pass an absolute report file.");
+// Keep synthetic journals under the caller's isolated report directory. Some
+// hosts restrict application writes in the shared Temp tree; no ACL changes are needed.
+var root = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(args[0]))!, "release-boundary-fixture-" + Guid.NewGuid().ToString("N"));
 var package = Path.Combine(root, "missing-component"); var journals = Path.Combine(root, "journals");
 var forbidden = new ForbiddenHost();
 var controller = new ShellNativeController(package, journals, forbidden);

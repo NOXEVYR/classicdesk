@@ -1,7 +1,7 @@
 # The application pins these exact bytes across Windows and other checkouts.
-runtime/*.json text eol=lf
+runtime/*.json -text whitespace=cr-at-eol
 
 # Preserve exact native source bytes referenced by the runtime manifest.
 native/*.cpp -text whitespace=cr-at-eol
 native/*.h -text whitespace=cr-at-eol
-native/Build-Service.ps1 -text whitespace=cr-at-eol
+native/*.ps1 -text whitespace=cr-at-eol

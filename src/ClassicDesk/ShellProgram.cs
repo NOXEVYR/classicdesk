@@ -8,11 +8,60 @@ public static class ShellProgram
     [STAThread]
     public static int Main(string[] args)
     {
-        if (args.Length == 1 && args[0] is "--classic-start" or "--layout-design")
+        if (args.Length == 1 && args[0] == "--explorer-rebuild-broker") return ExplorerRebuildBroker.Run();
+        if (args.Length == 1 && args[0] == "--explorer-rebuild")
+            return new Application { ShutdownMode = ShutdownMode.OnMainWindowClose }.Run(new ShellExplorerRebuildPanel());
+        if (args.Length == 2 && args[0] == "--explorer-prelaunch" && args[1] is "inspect" or "prepare-ribbon" or "restore")
+        {
+            try
+            {
+                var controller = new ExplorerPrelaunchController(new WindowsExplorerPrelaunchHost(), ExplorerPrelaunchController.DefaultDirectory);
+                var review = controller.Review();
+                string detail = args[1] == "prepare-ribbon" ? controller.EnsureRibbon() :
+                    args[1] == "restore" ? controller.Restore(review) : "只读检查；不推断现有窗口或启动验收结果。";
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Review = controller.Review(), Detail = detail }));
+                return 0;
+            }
+            catch (Exception e) { Console.Error.WriteLine("预加载兼容设置未完成：" + e.Message); return 1; }
+        }
+        if (args.Length == 2 && args[0] == "--request-explorer-folder")
+        {
+            try
+            {
+                var result = WindowsShellExplorerPanelOperations.RequestFolderInBroker(args[1]);
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result));
+                return 0;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new ShellExplorerOpenRequestResult(
+                    ShellExplorerOpenRequestOutcome.Unknown, "打开请求结果未知：" + e.GetType().Name)));
+                return 1;
+            }
+        }
+        if (args.Length == 1 && args[0] == "--inspect-explorer-layout")
+        {
+            try
+            {
+                var report = ShellExplorerDiagnostics.Capture();
+                var json = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                json.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, json));
+                return report.Complete ? 0 : 2;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Complete = false,
+                    Error = e.GetType().Name, ClicksVerified = false, DragVerified = false }));
+                return 2;
+            }
+        }
+        if (args.Length == 1 && args[0] is "--classic-start" or "--layout-design" or "--explorer-check")
         {
             // Explicit independent tools; no shell discovery, engine activation or key interception.
             var toolApp = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
             Window tool = args[0] == "--classic-start" ? new ClassicStartMenuWindow() :
+                args[0] == "--explorer-check" ? new ShellExplorerPanel() :
                 new LayoutWorkbenchWindow(openStartMenu: parent => new ClassicStartMenuWindow { Owner = parent }.ShowDialog());
             return toolApp.Run(tool);
         }
@@ -40,6 +89,56 @@ public static class ShellProgram
             {
                 Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new { Available = false, Reason = e.Message, HostSettingsChanged = false }));
                 return 1;
+            }
+        }
+        if (args.Length == 1 && args[0] == "--inspect-taskbar-health")
+        {
+            try
+            {
+                var report = ShellTaskbarDiagnostics.Capture();
+                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(report, options));
+                return report.Status == TaskbarCheckStatus.Healthy ? 0 : report.Status == TaskbarCheckStatus.Degraded ? 1 : 2;
+            }
+            catch (Exception e)
+            {
+                var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    Available = false,
+                    Status = "Unknown",
+                    Reason = e.GetType().Name,
+                    ReadOnly = true,
+                    WindowsStateChanged = false,
+                    RenderedPixelsVerified = false,
+                    ClickOperationsVerified = false,
+                    ServiceRunningUsedAsHealthEvidence = false
+                }, options));
+                return 2;
+            }
+        }
+        if (args.Length == 1 && args[0] == "--start-shell-session")
+        {
+            try
+            {
+                var result = ShellServiceSessionOperations.CreateDefault().StartCurrentSessionAsync().GetAwaiter().GetResult();
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(result, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                return result.ConfirmedStarted ? 0 : 1;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    State = "start-outcome-unknown",
+                    CurrentSessionStarted = (bool?)null,
+                    StartupDisabled = (bool?)null,
+                    ServiceRunning = (bool?)null,
+                    StartupAcceptanceWritten = (bool?)null,
+                    VisualEffectVerified = false,
+                    Detail = e.GetType().Name + ": " + e.Message
+                }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                return 2;
             }
         }
         if (args.Length == 1 && args[0] == "--disable-shell-service")
@@ -157,7 +256,7 @@ public static class ShellProgram
         string updateInitialization = "更新功能尚未就绪。";
         var window = new ShellSettingsWindow(inspectPlan: profile => Task.Run(() => ShellBackendPlanner.Describe(profile)), manageNative: (owner, profile) =>
         {
-            if (ShellServiceStatus.Read().Registered) new ShellServicePanel(profile) { Owner = owner }.ShowDialog();
+            if (ShellServiceStatus.Read().Registered) new ShellServicePanel(profile, sessions: ShellServiceSessionOperations.CreateDefault()) { Owner = owner }.ShowDialog();
             else ShellNativeController.Open(owner, profile);
         }, manageAutoHide: owner =>
         {
@@ -170,7 +269,7 @@ public static class ShellProgram
         {
             var workbench = new LayoutWorkbenchWindow(openStartMenu: parent => new ClassicStartMenuWindow { Owner = parent }.ShowDialog()) { Owner = owner };
             workbench.ShowDialog();
-        }, manageUpdates: owner =>
+        }, inspectExplorer: owner => new ShellExplorerPanel { Owner = owner }.ShowDialog(), manageUpdates: owner =>
         {
             if (updater is null) { MessageBox.Show(owner, updateInitialization, "ClassicDesk"); return; }
             updatePanel = new FrontendUpdatePanel(updater) { Owner = owner };

@@ -37,3 +37,13 @@
 `shell-service.cpp` 为固定 Windhawk 1.7.3 引擎 API 的 SCM 宿主，使用同一 v1.6 工具链构建为 i686 程序；该版本全局引擎启动接口只在 32 位实现。`Build-Service.ps1 -Toolchain <编译器目录> -OutputDirectory <输出目录>` 读取已固定的运行资产清单并生成内嵌摘要表，禁用 PE 时间戳以支持可重复构建。来源和产物摘要见 [service-host-build.json](service-host-build.json)。
 
 离线生命周期/崩溃阈值断言在 `service-session-tests.cpp`，不加载引擎。`--inspect` 校验固定资产和启动策略，`--inspect-protected` 额外核对安装目录及权限；二者不注册服务或注入进程。安装、冲突保护、恢复与未完成的开机验收见 [SHELL_STARTUP.md](../docs/SHELL_STARTUP.md)。
+
+## 开始菜单初始化修复
+
+`taskbar-start-button-position.wh.cpp` 基于上方固定提交的 m417z Start button always on the left 1.3.2，沿用 GPL-3.0-or-later。ClassicDesk 的 `1.3.2-classicdesk.1` 在应用样式前检查 XAML 窗口及内容，安全转换为 FrameworkElement；样式失败后释放递归保护，等待已有事件重试，不新增轮询或后台进程。
+
+2026-10-14 的故障 DLL 导出表将 `0x6bcb` 定位到 `StartMenuUI::ApplyStyle`。反汇编显示该指令从 `Window.Content` 返回对象中读取虚表，原源码没有空内容检查。该证据支持初始化时序修复；没有崩溃转储，无法据此保证所有外壳崩溃均已修复。
+
+`Build-StartPosition.ps1` 使用相同 Compiler SDK、v1.6 工具链及工具链 `include/winrt` 中的头文件。构建参数为 `-Toolchain`、`-Sdk`、`-EngineLibrary`、`-Output`。离线检查在 `start-menu-ready-tests.cpp`，不加载真实外壳。修复运行时独立记录于 [windows-x64-assets-startup-fix.json](../runtime/windows-x64-assets-startup-fix.json)，服务宿主使用 `Build-Service.ps1 -Manifest <修复清单>` 重建；旧清单和原安装保留。
+
+`scripts/Repair-ShellService.ps1` 提供 Prepare、Validate、Stage。仅处理已核对的旧服务：验证所有固定文件和所有者，从安装回执复制方案及原始恢复记录，只更换模块、模块版本选择、资产清单及匹配的新宿主。Stage 要求当前服务已经停止并禁用，复制到新的受保护目录、再次验证后，设置下次开机路径与自动启动；不立即启动引擎或重启 Explorer。`tests/ShellService/StartupRepairChecks.ps1` 在临时副本和模拟 SCM 下检查流程。
