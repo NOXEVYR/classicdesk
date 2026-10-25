@@ -29,6 +29,11 @@ public sealed class ExplorerRebuildBrokerException : IOException
 
 public sealed class ExplorerRebuildTransientReadException : IOException { }
 
+// A disposable observation helper can exhaust its own budget while the overall
+// operation still has time left. This is not user cancellation or an uncertain
+// mutation: only a fresh read may be attempted within the unchanged deadline.
+public sealed class ExplorerRebuildObservationTimeoutException : TimeoutException { }
+
 public sealed class ExplorerRebuildAccessException : IOException
 {
     public ExplorerRebuildAccessException() : base("Windows 拒绝读取资源管理器窗口。请将已验证的 ClassicDesk 安装到正常应用目录后重新启动；现有窗口已保留。") { }
@@ -51,8 +56,26 @@ public sealed class WindowsExplorerRebuildHost : IShellExplorerRebuildHost
         public override nint Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options) => checked((nint)reader.GetInt64());
         public override void Write(Utf8JsonWriter writer, nint value, JsonSerializerOptions options) => writer.WriteNumberValue((long)value);
     }
-    public async Task<ExplorerRebuildSnapshot> ObserveAsync(DateTimeOffset deadline, CancellationToken token) =>
-        (await broker(new("observe", deadline), token).ConfigureAwait(false)).Snapshot ?? throw new IOException("窗口快照未返回。");
+    public async Task<ExplorerRebuildSnapshot> ObserveAsync(DateTimeOffset deadline, CancellationToken token)
+    {
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            if (DateTimeOffset.UtcNow >= deadline) throw new TimeoutException();
+            try
+            {
+                return (await broker(new("observe", deadline), token).ConfigureAwait(false)).Snapshot
+                    ?? throw new IOException("窗口快照未返回。");
+            }
+            catch (ExplorerRebuildObservationTimeoutException)
+            {
+                token.ThrowIfCancellationRequested();
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                if (remaining <= TimeSpan.Zero) throw;
+                await Task.Delay(remaining < TimeSpan.FromMilliseconds(150) ? remaining : TimeSpan.FromMilliseconds(150), token).ConfigureAwait(false);
+            }
+        }
+    }
 
     public async Task<ExplorerRebuildOpenResult> OpenFolderAsync(string path, DateTimeOffset deadline, CancellationToken token)
     {
@@ -150,6 +173,13 @@ public sealed class WindowsExplorerRebuildHost : IShellExplorerRebuildHost
                 throw new ExplorerRebuildBrokerException(request.Action, failure?.Error, failure?.ErrorCode, helper.ExitCode, failure?.ErrorStage);
             }
             return JsonSerializer.Deserialize<ExplorerRebuildBrokerReply>(text, Json) ?? throw new IOException("窗口辅助程序结果为空。");
+        }
+        catch (OperationCanceledException) when (request.Action == "observe" &&
+            !token.IsCancellationRequested && DateTimeOffset.UtcNow < request.Deadline)
+        {
+            // RunAsync's finally kills and drains this read-only helper before
+            // ObserveAsync retries. Never retry an open/close with unknown outcome.
+            throw new ExplorerRebuildObservationTimeoutException();
         }
         finally
         {

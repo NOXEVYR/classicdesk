@@ -223,6 +223,50 @@ internal static class Program
             catch (OperationCanceledException) { cancelled = true; }
             Check(cancelled && closes == 1);
         });
+        Test("helper observation timeouts recover within one deadline without repeating mutations", () =>
+        {
+            int opens = 0, closes = 0, recoveredReads = 0;
+            bool afterOpen = false, afterClose = false;
+            var deadlines = new List<DateTimeOffset>();
+            var host = new WindowsExplorerRebuildHost((request, token) =>
+            {
+                deadlines.Add(request.Deadline);
+                if (request.Action == "open") { opens++; return Task.FromResult(new ExplorerRebuildBrokerReply(Outcome: ExplorerRebuildActionOutcome.Confirmed)); }
+                if (request.Action == "close") { closes++; return Task.FromResult(new ExplorerRebuildBrokerReply(Outcome: ExplorerRebuildActionOutcome.Confirmed)); }
+                Check(request.Action == "observe");
+                if (opens > 0 && !afterOpen) { afterOpen = true; recoveredReads++; throw new ExplorerRebuildObservationTimeoutException(); }
+                if (closes > 0 && !afterClose) { afterClose = true; recoveredReads++; throw new ExplorerRebuildObservationTimeoutException(); }
+                return Task.FromResult(new ExplorerRebuildBrokerReply(new(Anchor, true, closes > 0 ? [Candidate] : opens > 0 ? [Original, Candidate] : [Original])));
+            });
+            var result = new ShellExplorerRebuildCoordinator(host).RebuildAsync(new(Anchor, Original), TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
+            Check(result.State == ExplorerRebuildState.RecreatedInteractionUnverified && result.OriginalClosureObserved);
+            Check(opens == 1 && closes == 1 && recoveredReads == 2 && deadlines.Distinct().Count() == 1);
+        });
+        Test("persistent helper observation timeout stops at the original deadline without opening", () =>
+        {
+            int calls = 0;
+            var host = new WindowsExplorerRebuildHost((request, token) =>
+            { Check(request.Action == "observe"); calls++; throw new ExplorerRebuildObservationTimeoutException(); });
+            var result = new ShellExplorerRebuildCoordinator(host).RebuildAsync(new(Anchor, Original), TimeSpan.FromMilliseconds(250)).GetAwaiter().GetResult();
+            Check(result.State == ExplorerRebuildState.DeadlineExpired && result.OpenOutcome == ExplorerRebuildActionOutcome.NotRequested && calls is >= 1 and <= 3);
+        });
+        Test("user cancellation and uncertain mutation timeouts are never retried", () =>
+        {
+            int calls = 0; using var cancellation = new CancellationTokenSource();
+            var host = new WindowsExplorerRebuildHost((request, token) =>
+            { calls++; cancellation.Cancel(); throw new ExplorerRebuildObservationTimeoutException(); });
+            bool cancelled = false;
+            try { host.ObserveAsync(DateTimeOffset.UtcNow.AddSeconds(2), cancellation.Token).GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { cancelled = true; }
+            Check(cancelled && calls == 1);
+            calls = 0;
+            host = new WindowsExplorerRebuildHost((request, token) =>
+            { calls++; Check(request.Action == "close"); throw new OperationCanceledException(); });
+            cancelled = false;
+            try { host.CloseOriginalAsync(new(Anchor, Original, Candidate), DateTimeOffset.UtcNow.AddSeconds(2), default).GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { cancelled = true; }
+            Check(cancelled && calls == 1);
+        });
         var json = JsonSerializer.Serialize(new { passed = results.Count - failed, failed, realWindowActions = 0, windowsShown = 0, results }, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(Path.Combine(args[0], "report.json"), json); Console.WriteLine(json); return failed == 0 ? 0 : 1;
     }
